@@ -160,7 +160,7 @@ export default function GamePlayerParamPage({
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
           </svg>
         </div>
-        <h2 className="text-2xl font-black uppercase tracking-tight">You're Registered!</h2>
+        <h2 className="text-2xl font-black uppercase tracking-tight">You&apos;re Registered!</h2>
         <p className="text-md text-blue-200 mt-1">Nickname: <span className="font-extrabold text-white bg-white/20 px-2.5 py-0.5 rounded-md">{nickname}</span></p>
         <div className="mt-8 bg-white text-gray-900 px-6 py-4 rounded-xl shadow-xl w-full max-w-xs">
           <p className="text-sm font-extrabold text-[#1e3a8a] animate-bounce">Waiting for Host to begin...</p>
