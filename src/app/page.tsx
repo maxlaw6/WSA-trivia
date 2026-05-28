@@ -125,9 +125,11 @@ export default function RootPlayerPage() {
     return (
       <main className="bg-[#1e3a8a] min-h-screen w-full flex flex-col justify-center items-center px-4 m-0 p-0 box-border text-white">
         <div className="w-full max-w-sm bg-white text-gray-900 rounded-3xl p-6 shadow-2xl text-center">
-          <h1 className="text-2xl font-black text-[#1e3a8a] tracking-tight leading-none mb-1">
-            Wallace Stegner Academy
-          </h1>
+          <img 
+  src="https://wsacharter.org/wp-content/uploads/2023/11/logo.png" 
+  alt="Wallace Stegner Academy Logo"
+  className="h-16 mx-auto mb-5 object-contain"
+/>
           <p className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-6">Staff Trivia</p>
           
           <form onSubmit={handleJoinGame} className="space-y-4">
