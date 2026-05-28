@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/types/types'
 
 export default function SafePlayerParamPage({
@@ -90,29 +90,70 @@ export default function SafePlayerParamPage({
     }
   }
 
-  const checkPlacement = async () => {
+  // Calculate the grand champion safely by pulling cumulative answers
+  const checkPlacement = useCallback(async () => {
     setLoadingResult(true)
-    const { data: leaders } = await supabase
+    
+    // Fetch participants assigned here
+    const { data: players } = await supabase
       .from('participants')
-      .select('nickname, score')
+      .select('id, nickname')
       .eq('game_id', gameId)
-      .order('score', { ascending: false })
-      .limit(1)
 
-    if (leaders && leaders.length > 0) {
-      setWinningName(leaders[0].nickname)
-      if (leaders[0].nickname.toLowerCase() === nickname.toLowerCase()) {
+    if (!players || players.length === 0) {
+      setLoadingResult(false)
+      return
+    }
+
+    const playerIds = players.map((p: any) => String(p.id))
+
+    // Pull all positive scores logged for this group
+    const { data: answersRows } = await supabase
+      .from('answers')
+      .select('participant_id, score')
+      .in('participant_id', playerIds)
+
+    // Build a local lookup map to compile scores cleanly
+    const scoreMap: Record<string, number> = {}
+    playerIds.forEach(id => { scoreMap[id] = 0 })
+
+    if (answersRows) {
+      answersRows.forEach((ans: any) => {
+        const pId = String(ans.participant_id)
+        const pointVal = Number(ans.score || 0)
+        if (scoreMap[pId] !== undefined) {
+          scoreMap[pId] += pointVal
+        }
+      })
+    }
+
+    // Identify which ID holds the top score index
+    let topPlayerId = playerIds[0]
+    let maxScore = -1
+
+    playerIds.forEach(id => {
+      if (scoreMap[id] > maxScore) {
+        maxScore = scoreMap[id]
+        topPlayerId = id
+      }
+    })
+
+    const winnerObj = players.find((p: any) => String(p.id) === topPlayerId)
+    if (winnerObj) {
+      setWinningName(winnerObj.nickname)
+      if (winnerObj.nickname.toLowerCase() === nickname.toLowerCase()) {
         setIsWinner(true)
       }
     }
+    
     setLoadingResult(false)
-  }
+  }, [gameId, nickname])
 
   useEffect(() => {
     if (gamePhase === 'result') {
       checkPlacement()
     }
-  }, [gamePhase])
+  }, [gamePhase, checkPlacement])
 
   useEffect(() => {
     if (gamePhase !== 'quiz' || hasAnswered) return
@@ -246,7 +287,7 @@ export default function SafePlayerParamPage({
         {loadingResult ? (
           <p className="font-bold text-xl animate-pulse">Calculating scores...</p>
         ) : isWinner ? (
-          <div className="bg-yellow-400 text-gray-900 rounded-3xl p-8 shadow-2xl max-w-sm w-full border-4 border-white animate-bounce">
+          <div className="bg-yellow-400 text-gray-900 rounded-3xl p-8 shadow-2xl max-w-sm w-full border-4 border-white">
             <div className="text-5xl mb-2">🏆</div>
             <h2 className="text-3xl font-black tracking-tight uppercase">YOU WON!</h2>
             <p className="font-extrabold text-sm mt-2 tracking-wide text-amber-950">
