@@ -16,9 +16,13 @@ export default function SafePlayerPage() {
   const [choices, setChoices] = useState<any[]>([])
   const [hasAnswered, setHasAnswered] = useState(false)
 
-  // Sync state parameters
   const [isIntroducing, setIsIntroducing] = useState(true)
   const [timeLeft, setTimeLeft] = useState(30)
+
+  // End game victory states
+  const [isWinner, setIsWinner] = useState(false)
+  const [winningName, setWinningName] = useState('')
+  const [loadingResult, setLoadingResult] = useState(false)
 
   const handleJoinGame = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -35,21 +39,34 @@ export default function SafePlayerPage() {
       return
     }
 
-    const TargetGame = activeGames[0]
-    setGameId(TargetGame.id)
-    setGamePhase(TargetGame.phase)
-    setCurrentSequence(TargetGame.current_question_sequence)
+    const targetGame = activeGames[0]
+
+    // DUPLICATE NICKNAME SAFEGUARD
+    const { data: nameCheck } = await supabase
+      .from('participants')
+      .select('id')
+      .eq('game_id', targetGame.id)
+      .ilike('nickname', nickname.trim())
+
+    if (nameCheck && nameCheck.length > 0) {
+      alert('That nickname is taken in this room! Please add your last initial.')
+      return
+    }
+
+    setGameId(targetGame.id)
+    setGamePhase(targetGame.phase)
+    setCurrentSequence(targetGame.current_question_sequence)
 
     const { data: player, error } = await supabase
       .from('participants')
-      .insert({ nickname: nickname.trim(), game_id: TargetGame.id } as any)
+      .insert({ nickname: nickname.trim(), game_id: targetGame.id } as any)
       .select().single()
 
     if (error) return alert(error.message)
 
     setParticipantId(player.id)
     setJoined(true)
-    fetchSyncDetails(TargetGame.quiz_set_id, TargetGame.current_question_sequence)
+    fetchSyncDetails(targetGame.quiz_set_id, targetGame.current_question_sequence)
   }
 
   const fetchSyncDetails = async (quizSetId: string, sequence: number) => {
@@ -67,19 +84,39 @@ export default function SafePlayerPage() {
         setActiveQuestionId(activeQuestion.id)
         setCurrentQuestionText(activeQuestion.body || 'Get Ready...')
         setChoices(activeQuestion.choices || [])
-        
-        // Match host state parameters on initialization
         setIsIntroducing(true)
         setTimeLeft(30)
       }
     }
   }
 
-  // Local clock follows the host pacing matrix safely
+  const checkPlacement = async (targetGameId: string) => {
+    setLoadingResult(true)
+    const { data: leaders } = await supabase
+      .from('participants')
+      .select('nickname, score')
+      .eq('game_id', targetGameId)
+      .order('score', { ascending: false })
+      .limit(1)
+
+    if (leaders && leaders.length > 0) {
+      setWinningName(leaders[0].nickname)
+      if (leaders[0].nickname.toLowerCase() === nickname.toLowerCase()) {
+        setIsWinner(true)
+      }
+    }
+    setLoadingResult(false)
+  }
+
+  useEffect(() => {
+    if (gamePhase === 'result' && gameId) {
+      checkPlacement(gameId)
+    }
+  }, [gamePhase, gameId])
+
   useEffect(() => {
     if (gamePhase !== 'quiz' || hasAnswered) return
 
-    // 4-Second Intro Delay mimicking the host screen
     let introTime = 4
     const introClock = setInterval(() => {
       introTime -= 1
@@ -87,7 +124,6 @@ export default function SafePlayerPage() {
         clearInterval(introClock)
         setIsIntroducing(false)
 
-        // Start the master 30s countdown match
         const mainClock = setInterval(() => {
           setTimeLeft((prev) => {
             if (prev <= 1) {
@@ -100,9 +136,7 @@ export default function SafePlayerPage() {
       }
     }, 1000)
 
-    return () => {
-      clearInterval(introClock)
-    }
+    return () => clearInterval(introClock)
   }, [gamePhase, currentSequence, hasAnswered])
 
   useEffect(() => {
@@ -123,7 +157,7 @@ export default function SafePlayerPage() {
   }, [gameId])
 
   const handleSelectChoice = async (choice: any) => {
-    if (hasAnswered || !participantId || !activeQuestionId || isIntroducing) return
+    if (hasAnswered || !participantId || !activeQuestionId || isIntroducing || timeLeft <= 0) return
     setHasAnswered(true)
 
     await supabase.from('answers').insert({
@@ -173,8 +207,8 @@ export default function SafePlayerPage() {
         <div className="w-full max-w-md mx-auto px-4 pt-4">
           <div className="bg-white rounded-2xl p-4 shadow-sm text-center">
             <h2 className="text-lg font-extrabold text-gray-800 mb-2">{currentQuestionText}</h2>
-            <div className={`inline-block px-3 py-0.5 rounded-full text-xs font-black ${isIntroducing ? 'bg-blue-50 text-blue-600' : 'bg-red-50 text-red-600'}`}>
-              {isIntroducing ? '👀 Previewing...' : `⏱️ ${timeLeft}s Left`}
+            <div className={`inline-block px-3 py-0.5 rounded-full text-xs font-black ${isIntroducing ? 'bg-blue-50 text-blue-600' : timeLeft <= 0 ? 'bg-gray-100 text-gray-500' : 'bg-red-50 text-red-600'}`}>
+              {isIntroducing ? '👀 Previewing...' : timeLeft <= 0 ? '⏰ Time Up!' : `⏱️ ${timeLeft}s Left`}
             </div>
           </div>
         </div>
@@ -183,7 +217,10 @@ export default function SafePlayerPage() {
           {isIntroducing ? (
             <div className="text-center bg-white/80 backdrop-blur p-6 rounded-2xl shadow-md w-full border border-gray-200/50 animate-pulse">
               <span className="text-sm font-black text-[#1e3a8a] uppercase tracking-wider block">Get Ready!</span>
-              <span className="text-xs text-gray-400 font-medium mt-1 block">Read the question on the main screen.</span>
+            </div>
+          ) : timeLeft <= 0 ? (
+            <div className="text-center bg-white p-6 rounded-2xl shadow-md w-full border border-gray-200 text-gray-400 font-bold uppercase tracking-wide">
+              ⏰ Locked out! Look at board for results.
             </div>
           ) : !hasAnswered ? (
             <div className="w-full h-full flex flex-col justify-between gap-2.5">
@@ -196,7 +233,6 @@ export default function SafePlayerPage() {
           ) : (
             <div className="text-center bg-white p-6 rounded-2xl shadow-xl w-full">
               <h3 className="text-xl font-black text-[#1e3a8a] uppercase">Answer Locked In!</h3>
-              <p className="text-xs text-gray-400 font-medium mt-1">Watch the main screen for details.</p>
             </div>
           )}
         </div>
@@ -206,8 +242,33 @@ export default function SafePlayerPage() {
 
   if (gamePhase === 'result') {
     return (
-      <main className="bg-[#1e3a8a] min-h-screen w-full flex flex-col justify-center items-center text-white">
-        <h2 className="text-2xl font-black uppercase">Quiz Finished!</h2>
+      <main className="bg-[#1e3a8a] min-h-screen w-full flex flex-col justify-center items-center px-4 text-white text-center select-none">
+        {loadingResult ? (
+          <p className="font-bold text-xl animate-pulse">Calculating scores...</p>
+        ) : isWinner ? (
+          <div className="bg-yellow-400 text-gray-900 rounded-3xl p-8 shadow-2xl max-w-sm w-full border-4 border-white animate-bounce">
+            <div className="text-5xl mb-2">🏆</div>
+            <h2 className="text-3xl font-black tracking-tight uppercase">YOU WON!</h2>
+            <p className="font-extrabold text-sm mt-2 tracking-wide text-amber-950">
+              📸 SCREENSHOT THIS WIN! It is proof you had the most knowledge!
+            </p>
+            <div className="mt-6 bg-white rounded-xl py-3 px-4 font-black tracking-wide border-2 border-amber-600">
+              {nickname.toUpperCase()}
+            </div>
+          </div>
+        ) : (
+          <div className="bg-white text-gray-900 rounded-3xl p-8 shadow-2xl max-w-sm w-full border border-gray-100">
+            <div className="text-4xl mb-2">🤝</div>
+            <h2 className="text-2xl font-black tracking-tight text-[#1e3a8a] uppercase">THANK YOU FOR PLAYING!</h2>
+            <p className="text-sm text-gray-500 font-bold mt-2 leading-relaxed">
+              Sorry, maybe next time! 🌟<br />
+              Winner: <span className="font-black text-gray-800 bg-gray-100 px-2 py-0.5 rounded">{winningName || '---'}</span>
+            </p>
+            <div className="mt-6 pt-4 border-t border-gray-100 text-[10px] font-bold text-gray-300 uppercase tracking-widest">
+              Wallace Stegner Academy
+            </div>
+          </div>
+        )}
       </main>
     )
   }
