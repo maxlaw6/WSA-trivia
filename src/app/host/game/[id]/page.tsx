@@ -154,13 +154,13 @@ export default function HostGamePage({
 
     let lyricIdx = 0
     const interval = setInterval(() => {
-      setLyricTrigger(false) // Trigger drop phase
+      setLyricTrigger(false) 
       
       setTimeout(() => {
         lyricIdx = (lyricIdx + 1) % swiftLyrics.length
         setActiveLyric(swiftLyrics[lyricIdx])
-        setLyricTrigger(true) // Trigger swooping entrance
-      }, 600) // Timing split matching animation frames
+        setLyricTrigger(true) 
+      }, 600) 
 
     }, 4500)
 
@@ -183,25 +183,13 @@ export default function HostGamePage({
     return (
       <main className="bg-gray-900 min-h-screen text-white flex flex-col justify-between p-12 select-none relative overflow-hidden">
         
-        <style dangerouslySetInnerHTML={{__html: `
-          @keyframes bday-glow {
-            0% { color: #f472b6; text-shadow: 0 0 10px #f472b6; }
-            33% { color: #fbbf24; text-shadow: 0 0 10px #fbbf24; }
-            66% { color: #60a5fa; text-shadow: 0 0 10px #60a5fa; }
-            100% { color: #f472b6; text-shadow: 0 0 10px #f472b6; }
-          }
-          .bday-text {
-            animation: bday-glow 3s linear infinite;
-          }
-        `}} />
-
         <div className="flex justify-between items-center border-b border-gray-800 pb-4 w-full">
           <div>
             <span className="text-xs font-black text-[#1368ce] tracking-widest uppercase block">Public Charter Network</span>
             <h2 className="text-xl font-black tracking-tight uppercase text-white">Wallace Stegner Academy</h2>
           </div>
           <div className="text-right">
-            <span className="bg-[#e21b3c]/10 border border-[#e21b3c]/30 rounded-xl px-4 py-1.5 text-xs font-black text-[#e21b3c] uppercase tracking-wider animate-pulse">
+            <span className="bg-[#1368ce]/10 border border-[#1368ce]/30 rounded-xl px-4 py-1.5 text-xs font-black text-[#1368ce] uppercase tracking-wider animate-pulse">
               ☀️ Daytime Assembly Edition
             </span>
           </div>
@@ -228,11 +216,6 @@ export default function HostGamePage({
 
           <div className="col-span-7 space-y-6">
             <div className="bg-black/30 border border-gray-800 p-8 rounded-3xl shadow-xl">
-              <div className="mb-4 bg-gradient-to-r from-pink-500/20 via-purple-500/20 to-blue-500/20 border border-pink-500/40 rounded-full py-2 px-6 inline-block animate-pulse">
-                <span className="text-xs font-black tracking-widest bday-text uppercase">
-                  🎉 DON&apos;T FORGET IT&apos;S ANNA&apos;S BIRTHDAY TODAY! 🎂
-                </span>
-              </div>
 
               <h1 className="text-4xl font-black tracking-tight uppercase leading-tight text-white">
                 Staff Trivia Arena
@@ -243,7 +226,6 @@ export default function HostGamePage({
 
               <div className="mt-6 flex gap-4 items-center">
                 <div className="bg-gray-800 border border-gray-700 rounded-2xl py-4 px-8 inline-block relative">
-                  <span className="absolute -top-3 -right-3 text-2xl animate-bounce">🎈</span>
                   <span className="text-[10px] uppercase font-black text-gray-400 tracking-wider block">Staff Logged In</span>
                   <span className="text-4xl font-black text-green-400 mt-0.5 block tracking-tight tabular-nums">
                     {totalPlayers}
@@ -254,7 +236,7 @@ export default function HostGamePage({
 
             <button
               onClick={handleStartGame}
-              className="w-full bg-pink-600 hover:bg-pink-500 text-white font-black text-2xl py-5 rounded-2xl uppercase tracking-wider shadow-lg border-b-4 border-pink-800 transition-all active:scale-95 flex items-center justify-center gap-3"
+              className="w-full bg-[#1368ce] hover:bg-blue-500 text-white font-black text-2xl py-5 rounded-2xl uppercase tracking-wider shadow-lg border-b-4 border-blue-800 transition-all active:scale-95 flex items-center justify-center gap-3"
             >
               Start Assembly Game 🚀
             </button>
@@ -345,7 +327,7 @@ export default function HostGamePage({
           })}
         </div>
 
-        {/* DYNAMIC FLOATING BACKGROUND LYRICS TRACK (Swoops across the top background lane) */}
+        {/* DYNAMIC FLOATING BACKGROUND LYRICS TRACK */}
         <div className="absolute top-10 left-0 right-0 w-full overflow-hidden pointer-events-none h-24 flex items-center justify-center z-0 px-4">
           {lyricTrigger && (
             <span className="text-3xl font-black uppercase tracking-widest italic font-sans whitespace-nowrap text-center text-purple-400/20 select-none transform-gpu space-x-2 block border-y border-white/5 py-2 w-full bg-black/5 backdrop-blur-[1px] max-w-4xl rounded-xl custom-track-line text-ellipsis overflow-hidden min-h-[52px] swooping-lyric-track">
