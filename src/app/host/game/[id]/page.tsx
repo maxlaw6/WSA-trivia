@@ -131,8 +131,9 @@ export default function Home({
       {currentScreen === AdminScreens.lobby && (
         <Lobby participants={participants} gameId={gameId} />
       )}
-      {currentScreen === AdminScreens.quiz && quizSet?.questions && (
+     {currentScreen === AdminScreens.quiz && quizSet?.questions && (
         <Quiz
+          key={`quiz_seq_${currentQuestionSequence}`}
           questions={quizSet.questions}
           currentSequence={currentQuestionSequence}
           gameId={gameId}
