@@ -19,7 +19,9 @@ export default function SafePlayerParamPage({
   const [choices, setChoices] = useState<any[]>([])
   const [hasAnswered, setHasAnswered] = useState(false)
 
+  // Absolute master values tracked dynamically from host stream
   const [isIntroducing, setIsIntroducing] = useState(true)
+  const [timeLeft, setTimeLeft] = useState(30)
 
   const [isWinner, setIsWinner] = useState(false)
   const [winningName, setWinningName] = useState('')
@@ -149,6 +151,9 @@ export default function SafePlayerParamPage({
           setGamePhase(updated.phase)
           setCurrentSequence(updated.current_question_sequence)
           
+          if (updated.dynamic_time_left !== undefined) {
+            setTimeLeft(Number(updated.dynamic_time_left))
+          }
           if (updated.dynamic_is_introducing !== undefined) {
             setIsIntroducing(Boolean(updated.dynamic_is_introducing))
           }
@@ -163,8 +168,10 @@ export default function SafePlayerParamPage({
   }, [gameId, currentSequence])
 
   const handleSelectChoice = async (choice: any) => {
-    // HARD LOCKOUT GUARD: Reject insertions if time expired or phase switched to results
-    if (hasAnswered || !participantId || !activeQuestionId || isIntroducing || gamePhase === 'show_results') return
+    // SOLIDIFIED MECHANICAL LOCK: Immediate rejection if time matches 0 or phase states match
+    if (hasAnswered || !participantId || !activeQuestionId || isIntroducing || timeLeft <= 0 || gamePhase === 'show_results') {
+      return
+    }
     setHasAnswered(true)
 
     await supabase.from('answers').insert({
@@ -203,7 +210,7 @@ export default function SafePlayerParamPage({
     )
   }
 
-  if (gamePhase === 'quiz' || gamePhase === 'show_results') {
+  if (gamePhase === 'quiz' || gamePhase === 'show_results' || timeLeft <= 0) {
     return (
       <main className="bg-gray-100 min-h-screen w-full flex flex-col text-gray-900 select-none pt-8">
         <div className="bg-[#1e3a8a] text-white py-3 px-4 shadow-md flex justify-between items-center shrink-0">
@@ -214,8 +221,8 @@ export default function SafePlayerParamPage({
         <div className="w-full max-w-md mx-auto px-4 pt-4">
           <div className="bg-white rounded-2xl p-4 shadow-sm text-center">
             <h2 className="text-lg font-extrabold text-gray-800 mb-2">{currentQuestionText}</h2>
-            <div className={`inline-block px-3 py-0.5 rounded-full text-xs font-black ${isIntroducing ? 'bg-blue-50 text-blue-600' : gamePhase === 'show_results' ? 'bg-gray-100 text-gray-500' : 'bg-red-50 text-red-600'}`}>
-              {isIntroducing ? '👀 Previewing...' : gamePhase === 'show_results' ? '⏰ Time Up!' : '⏱️ Active Round'}
+            <div className={`inline-block px-3 py-0.5 rounded-full text-xs font-black ${isIntroducing ? 'bg-blue-50 text-blue-600' : (gamePhase === 'show_results' || timeLeft <= 0) ? 'bg-gray-100 text-gray-500' : 'bg-red-50 text-red-600'}`}>
+              {isIntroducing ? '👀 Previewing...' : (gamePhase === 'show_results' || timeLeft <= 0) ? '⏰ Time Up!' : '⏱️ Active Round'}
             </div>
           </div>
         </div>
@@ -225,7 +232,7 @@ export default function SafePlayerParamPage({
             <div className="text-center bg-white/80 backdrop-blur p-6 rounded-2xl shadow-md w-full border border-gray-200/50 animate-pulse">
               <span className="text-sm font-black text-[#1e3a8a] uppercase tracking-wider block">Get Ready!</span>
             </div>
-          ) : gamePhase === 'show_results' ? (
+          ) : (gamePhase === 'show_results' || timeLeft <= 0) ? (
             <div className="text-center bg-white p-6 rounded-2xl shadow-md w-full border border-gray-200 text-gray-400 font-bold uppercase tracking-wide">
               ⏰ Locked out! Look at board for results.
             </div>
