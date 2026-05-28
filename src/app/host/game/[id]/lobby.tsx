@@ -45,7 +45,7 @@ export default function Lobby({
         <div className="pl-4">
           {/* <img src="/qr.png" alt="QR code" /> */}
           <Canvas
-            text={`https://kahoot-alternative.vercel.app/game/${gameId}`}
+            text={`https://wsa-trivia.vercel.app/game/${gameId}`}
             options={{
               errorCorrectionLevel: 'M',
               margin: 3,
