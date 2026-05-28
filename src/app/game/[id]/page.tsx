@@ -102,10 +102,10 @@ export default function GamePlayerParamPage({
         .eq('id', participantId)
         .single()
       
-      await supabase
-        .from('participants')
-        .update({ score: (p?.score || 0) + 100 })
-        .eq('id', participantId)
+     await supabase
+  .from('participants')
+  .update({ score: ((p as any)?.score || 0) + 100 } as any)
+  .eq('id', participantId)
     }
 
     await supabase.from('answers').insert({
