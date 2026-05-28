@@ -117,9 +117,7 @@ export default function HostQuizView({
     }
   }, [activeQuestion, gameId, isIntroducing])
 
-  // 4. Central Pacing Loop
-  const answersCount = answeredUserIds.length
-
+  // 4. Central Pacing Loop with Direct Database Time Sync Broadcasts
   useEffect(() => {
     if (isIntroducing) return
     if (timeLeft <= 0) {
@@ -127,19 +125,38 @@ export default function HostQuizView({
       return
     }
 
-    const timer = setTimeout(() => {
-      setTimeLeft((prev) => prev - 1)
+    const timer = setTimeout(async () => {
+      const nextTime = timeLeft - 1
+      setTimeLeft(nextTime)
+
+      // Broadcast the exact master time remaining directly down into the shared room row!
+      await supabase
+        .from('games')
+        .update({ dynamic_time_left: nextTime, dynamic_is_introducing: false } as any)
+        .eq('id', gameId)
+
     }, 1000)
 
     return () => clearTimeout(timer)
-  }, [timeLeft, isIntroducing])
+  }, [timeLeft, isIntroducing, gameId])
+
+  // Broadcast introducing state variables
+  useEffect(() => {
+    if (isIntroducing && gameId) {
+      supabase
+        .from('games')
+        .update({ dynamic_is_introducing: true, dynamic_time_left: 30 } as any)
+        .eq('id', gameId)
+        .then()
+    }
+  }, [isIntroducing, gameId])
 
   const handleNextQuestion = async () => {
     const nextIndex = currentSequence + 1
     if (nextIndex >= questions.length) {
       await supabase.from('games').update({ phase: 'result' }).eq('id', gameId)
     } else {
-      await supabase.from('games').update({ current_question_sequence: nextIndex }).eq('id', gameId)
+      await supabase.from('games').update({ current_question_sequence: nextIndex, phase: 'quiz' }).eq('id', gameId)
     }
   }
 
@@ -158,7 +175,7 @@ export default function HostQuizView({
           <div className="bg-gray-800 px-4 py-2 rounded-xl text-center border border-gray-700">
             <span className="text-[10px] uppercase font-black text-gray-400 block tracking-wider">Responses</span>
             <span className="text-lg font-black text-green-400">
-              {isIntroducing ? '0' : answersCount}
+              {isIntroducing ? '0' : answeredUserIds.length}
             </span>
           </div>
           
