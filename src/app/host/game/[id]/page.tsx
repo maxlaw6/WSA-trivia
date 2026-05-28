@@ -223,13 +223,14 @@ export default function HostGamePage({
         </div>
 
         {/* Master Leaderboard Card */}
-        <div className="max-w-2xl w-full bg-gradient-to-br from-purple-900/60 to-black/50 backdrop-blur rounded-3xl p-10 shadow-2xl border-4 border-pink-400 text-center relative z-10 animate-fade-in scale-100">
+        <div className="max-w-2xl w-full bg-gradient-to-br from-purple-900/60 to-black/50 backdrop-blur rounded-3xl p-10 shadow-2xl border-4 border-pink-400 text-center relative z-10 scale-100">
           <span className="text-4xl mb-2 block animate-bounce">👑</span>
           <h1 className="text-4xl font-black uppercase tracking-tight swift-glow-title text-pink-300">
             THE ERAS LEADERBOARD
           </h1>
+          {/* SAFE ESCAPED CHARACTERS */}
           <span className="text-[10px] font-black tracking-widest text-white bg-pink-500 px-3 py-0.5 rounded-full inline-block mt-2 uppercase border border-pink-300/40">
-            Taylor's Version 🎸
+            Taylor&apos;s Version 🎸
           </span>
 
           {/* Player Ranking Rows Stack */}
