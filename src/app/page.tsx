@@ -64,7 +64,7 @@ export default function SafePlayerPage() {
       .single()
 
     if (quizData && quizData.questions && quizData.questions[sequence]) {
-      const activeQuestion = quizData.questions[sequence]
+  const activeQuestion = quizData.questions[sequence]
       setCurrentQuestionText(activeQuestion.body || 'Get Ready...')
       setChoices(activeQuestion.choices || [])
       // Reset local timer guess to standard 30 seconds when question shifts
