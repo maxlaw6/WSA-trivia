@@ -31,7 +31,6 @@ export default function HostQuizView({
       setShowResults(false)
       setAnswersCount(0)
 
-      // Get total players currently registered in THIS live game session
       const fetchTotalPlayers = async () => {
         const { count } = await supabase
           .from('participants')
@@ -43,12 +42,12 @@ export default function HostQuizView({
     }
   }, [currentSequence, questions, gameId])
 
-  // 2. SESSION-ISOLATED POLLING ENGINE
+  // 2. STABLE FLAT-ARRAY POLLING ENGINE
   useEffect(() => {
     if (!activeQuestion) return
 
     const checkAnswersDirectly = async () => {
-      // First, fetch the IDs of players belonging strictly to this active game
+      // Fetch active participants
       const { data: activePlayers } = await supabase
         .from('participants')
         .select('id')
@@ -59,9 +58,10 @@ export default function HostQuizView({
         return
       }
 
-      const playerIds = activePlayers.map(p => p.id)
+      // CRITICAL FIX: Convert object array to flat string array explicitly
+      const playerIds: string[] = activePlayers.map((p: any) => String(p.id))
 
-      // Only count answers matching this question AND submitted by active session players
+      // Query answers explicitly filtering by this question and our live flat player IDs
       const { count } = await supabase
         .from('answers')
         .select('*', { count: 'exact', head: true })
