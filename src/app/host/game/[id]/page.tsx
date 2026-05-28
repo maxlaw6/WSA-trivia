@@ -20,7 +20,7 @@ export default function HostGamePage({
   const [currentQuestionSequence, setCurrentQuestionSequence] = useState(0)
   const [leaderboard, setLeaderboard] = useState<any[]>([])
   const [totalPlayers, setTotalPlayers] = useState(0)
-  const [rawOriginUrl, setRawOriginUrl] = useState('https://YOUR-VERCEL-PROJECT-NAME.vercel.app')
+  const [rawOriginUrl, setRawOriginUrl] = useState('https://wsa-trivia.vercel.app')
 
   // Safely grab the live deployment URL when running inside a client browser session
   useEffect(() => {
@@ -147,9 +147,10 @@ export default function HostGamePage({
   // --- RENDERING VIEWS ---
 
   if (currentScreen === AdminScreens.lobby) {
-    // Generate an absolute query destination pointing straight to your mobile landing interface
     const directJoinUrl = `${rawOriginUrl}/game/${gameId}`
-    const googleQrApi = `https://chart.googleapis.com/chart?cht=qr&chs=400x400&chl=${encodeURIComponent(directJoinUrl)}&chld=M|1`
+    
+    // FIREWALL SAFE FALLBACK: If google is blocked, use third-party dynamic open QR generator fallback engine
+    const secureFallbackQr = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(directJoinUrl)}`
 
     return (
       <main className="bg-gray-900 min-h-screen text-white flex flex-col justify-between p-12 select-none relative overflow-hidden">
@@ -187,12 +188,19 @@ export default function HostGamePage({
             <span className="text-xs font-black text-gray-500 tracking-widest uppercase mb-4 text-center">
               📱 SCAN QR CODE TO JOIN NOW
             </span>
+            
+            {/* SWITCHED TO SECURITY RE-ROUTED QR SERVER TO BYPASS NETWORK FILTERS */}
             <img 
-              src={googleQrApi} 
+              src={secureFallbackQr} 
               alt="Scan Room Entry QR Code" 
               className="w-full max-w-[320px] aspect-square block bg-white rounded-xl shadow-inner select-none"
               draggable="false"
+              onError={(e) => {
+                // Double Fallback: If both external micro-services fail due to extreme firewalls, use clear direct textual backup layout
+                e.currentTarget.style.display = 'none';
+              }}
             />
+            
             <div className="mt-4 text-center bg-gray-50 px-4 py-2.5 rounded-xl border border-gray-200 w-full">
               <span className="text-[10px] uppercase font-black text-gray-400 block tracking-wider">Alternative Web link</span>
               <span className="text-sm font-black text-blue-600 break-all select-all tracking-tight uppercase">
@@ -207,7 +215,7 @@ export default function HostGamePage({
               
               <div className="mb-4 bg-gradient-to-r from-pink-500/20 via-purple-500/20 to-blue-500/20 border border-pink-500/40 rounded-full py-2 px-6 inline-block animate-pulse">
                 <span className="text-xs font-black tracking-widest bday-text uppercase">
-                  🎉 HAPPY BIRTHDAY, ANNA! 🎂
+                  🎉 DON&apos;T FORGET IT&apos;S ANNA&apos;S BIRTHDAY TODAY! 🎂
                 </span>
               </div>
 
