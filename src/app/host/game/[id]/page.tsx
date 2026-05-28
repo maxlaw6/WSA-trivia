@@ -1,11 +1,8 @@
 'use client'
 
 import {
-  Answer,
-  Choice,
   Game,
   Participant,
-  Question,
   QuizSet,
   supabase,
 } from '@/types/types'
@@ -30,8 +27,8 @@ export default function Home({
   )
 
   const [participants, setParticipants] = useState<Participant[]>([])
-
   const [quizSet, setQuizSet] = useState<QuizSet>()
+  const [currentQuestionSequence, setCurrentQuestionSequence] = useState(0)
 
   useEffect(() => {
     const getQuestions = async () => {
@@ -94,15 +91,14 @@ export default function Home({
             table: 'games',
             filter: `id=eq.${gameId}`,
           },
-        (payload) => {
-  const game = payload.new as Game
-  setCurrentScreen(game.phase as AdminScreens)
-  
-  // Only change the question sequence if we are already in the quiz phase!
-  if (game.phase === 'quiz') {
-    setCurrentQuestionSequence(game.current_question_sequence)
-  }
-}
+          (payload) => {
+            const game = payload.new as Game
+            setCurrentScreen(game.phase as AdminScreens)
+            
+            if (game.phase === 'quiz') {
+              setCurrentQuestionSequence(game.current_question_sequence)
+            }
+          }
         )
         .subscribe()
 
@@ -130,27 +126,24 @@ export default function Home({
     }
   }, [gameId])
 
-  const [currentQuestionSequence, setCurrentQuestionSequence] = useState(0)
-
   return (
-    <main className="bg-green-600 min-h-screen">
-      {currentScreen == AdminScreens.lobby && (
-        <Lobby participants={participants} gameId={gameId}></Lobby>
+    <main className="bg-gray-900 min-h-screen">
+      {currentScreen === AdminScreens.lobby && (
+        <Lobby participants={participants} gameId={gameId} />
       )}
-      {currentScreen == AdminScreens.quiz && (
+      {currentScreen === AdminScreens.quiz && quizSet?.questions && (
         <Quiz
-          question={quizSet!.questions![currentQuestionSequence]}
-          questionCount={quizSet!.questions!.length}
+          questions={quizSet.questions}
+          currentSequence={currentQuestionSequence}
           gameId={gameId}
-          participants={participants}
-        ></Quiz>
+        />
       )}
-      {currentScreen == AdminScreens.result && (
+      {currentScreen === AdminScreens.result && (
         <Results
-          participants={participants!}
+          participants={participants}
           quizSet={quizSet!}
           gameId={gameId}
-        ></Results>
+        />
       )}
     </main>
   )
