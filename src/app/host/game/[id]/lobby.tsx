@@ -46,9 +46,9 @@ export default function Lobby({
         </div>
         <div className="pl-4">
           <Canvas
-            text={`https://wsa-trivia.vercel.app/game/${gameId}`}
-            options={{
-              errorCorrectionLevel: 'M',
+  text={`${typeof window !== 'undefined' ? window.location.origin : 'https://wsa-trivia.vercel.app'}/game/${gameId}`}
+  options={{
+    errorCorrectionLevel: 'M',
               margin: 3,
               scale: 4,
               width: 400,
