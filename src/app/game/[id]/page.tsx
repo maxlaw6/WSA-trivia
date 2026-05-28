@@ -3,17 +3,15 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/types/types'
 
-export default function SafePlayerParamPage({
-  params: { id: gameId },
-}: {
-  params: { id: string }
-}) {
+export default function SafePlayerPage() {
   const [nickname, setNickname] = useState('')
   const [joined, setJoined] = useState(false)
+  const [gameId, setGameId] = useState<string | null>(null)
   const [participantId, setParticipantId] = useState<string | null>(null)
   const [gamePhase, setGamePhase] = useState('lobby')
   const [currentSequence, setCurrentSequence] = useState(0)
   
+  const [activeQuestionId, setActiveQuestionId] = useState<string | null>(null)
   const [currentQuestionText, setCurrentQuestionText] = useState('')
   const [timeLeft, setTimeLeft] = useState(30)
   const [choices, setChoices] = useState<any[]>([])
@@ -23,30 +21,32 @@ export default function SafePlayerParamPage({
     e.preventDefault()
     if (!nickname.trim()) return
 
-    const { data: targetGame } = await supabase
+    const { data: activeGames } = await supabase
       .from('games')
       .select('id, phase, quiz_set_id, current_question_sequence')
-      .eq('id', gameId)
-      .single()
+      .order('created_at', { ascending: false })
+      .limit(1)
 
-    if (!targetGame) {
-      alert('Active game room not found!')
+    if (!activeGames || activeGames.length === 0) {
+      alert('No active rooms found!')
       return
     }
 
-    setGamePhase(targetGame.phase)
-    setCurrentSequence(targetGame.current_question_sequence)
+    const TargetGame = activeGames[0]
+    setGameId(TargetGame.id)
+    setGamePhase(TargetGame.phase)
+    setCurrentSequence(TargetGame.current_question_sequence)
 
     const { data: player, error } = await supabase
       .from('participants')
-      .insert({ nickname: nickname.trim(), game_id: gameId } as any)
+      .insert({ nickname: nickname.trim(), game_id: TargetGame.id } as any)
       .select().single()
 
     if (error) return alert(error.message)
 
     setParticipantId(player.id)
     setJoined(true)
-    fetchSyncDetails(targetGame.quiz_set_id, targetGame.current_question_sequence)
+    fetchSyncDetails(TargetGame.quiz_set_id, TargetGame.current_question_sequence)
   }
 
   const fetchSyncDetails = async (quizSetId: string, sequence: number) => {
@@ -61,6 +61,7 @@ export default function SafePlayerParamPage({
       const activeQuestion = sortedQuestions[sequence]
       
       if (activeQuestion) {
+        setActiveQuestionId(activeQuestion.id)
         setCurrentQuestionText(activeQuestion.body || 'Get Ready...')
         setChoices(activeQuestion.choices || [])
         setTimeLeft(30)
@@ -79,7 +80,7 @@ export default function SafePlayerParamPage({
   useEffect(() => {
     if (!gameId) return
     const channel = supabase
-      .channel('safe_param_player_sync')
+      .channel('safe_player_sync')
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'games', filter: `id=eq.${gameId}` },
         (payload: any) => {
           const updated = payload.new
@@ -93,12 +94,20 @@ export default function SafePlayerParamPage({
   }, [gameId])
 
   const handleSelectChoice = async (choice: any) => {
-    if (hasAnswered || !participantId) return
+    if (hasAnswered || !participantId || !activeQuestionId) return
     setHasAnswered(true)
-    try {
-      await supabase.from('participants').update({ score: 100 } as any).eq('id', participantId)
-    } catch (e) {}
-    await supabase.from('answers').insert({ participant_id: participantId, question_id: choice.question_id, choice_id: choice.id } as any)
+
+    // Direct, explicit payload matching your database columns exactly
+    const { error } = await supabase.from('answers').insert({
+      participant_id: participantId,
+      question_id: activeQuestionId,
+      choice_id: choice.id,
+      score: choice.is_correct ? 100 : 0
+    } as any)
+
+    if (error) {
+      console.error("Insert failed structural constraints:", error.message)
+    }
   }
 
   const gridColors = ['bg-[#e21b3c]', 'bg-[#1368ce]', 'bg-[#d89e00]', 'bg-[#26890c]']
