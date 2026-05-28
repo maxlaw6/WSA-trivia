@@ -121,6 +121,10 @@ export default function Home({
 
     getQuestions()
     setGameListner()
+
+    return () => {
+      supabase.removeAllChannels()
+    }
   }, [gameId])
 
   const [currentQuestionSequence, setCurrentQuestionSequence] = useState(0)
