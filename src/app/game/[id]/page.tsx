@@ -10,7 +10,6 @@ export default function SafePlayerParamPage({
 }) {
   const [nickname, setNickname] = useState('')
   const [joined, setJoined] = useState(false)
-  const [gameId, setGameId] = useState<string | null>(null)
   const [participantId, setParticipantId] = useState<string | null>(null)
   const [gamePhase, setGamePhase] = useState('lobby')
   const [currentSequence, setCurrentSequence] = useState(0)
@@ -24,32 +23,30 @@ export default function SafePlayerParamPage({
     e.preventDefault()
     if (!nickname.trim()) return
 
-    const { data: activeGames } = await supabase
+    const { data: targetGame } = await supabase
       .from('games')
       .select('id, phase, quiz_set_id, current_question_sequence')
-      .order('created_at', { ascending: false })
-      .limit(1)
+      .eq('id', gameId)
+      .single()
 
-    if (!activeGames || activeGames.length === 0) {
-      alert('No active rooms found!')
+    if (!targetGame) {
+      alert('Active game room not found!')
       return
     }
 
-    const TargetGame = activeGames[0]
-    setGameId(TargetGame.id)
-    setGamePhase(TargetGame.phase)
-    setCurrentSequence(TargetGame.current_question_sequence)
+    setGamePhase(targetGame.phase)
+    setCurrentSequence(targetGame.current_question_sequence)
 
     const { data: player, error } = await supabase
       .from('participants')
-      .insert({ nickname: nickname.trim(), game_id: TargetGame.id } as any)
+      .insert({ nickname: nickname.trim(), game_id: gameId } as any)
       .select().single()
 
     if (error) return alert(error.message)
 
     setParticipantId(player.id)
     setJoined(true)
-    fetchSyncDetails(TargetGame.quiz_set_id, TargetGame.current_question_sequence)
+    fetchSyncDetails(targetGame.quiz_set_id, targetGame.current_question_sequence)
   }
 
   const fetchSyncDetails = async (quizSetId: string, sequence: number) => {
@@ -60,7 +57,6 @@ export default function SafePlayerParamPage({
       .single()
 
     if (quizData && quizData.questions) {
-      // Sort questions strictly by their order matching the host's logic
       const sortedQuestions = [...quizData.questions].sort((a: any, b: any) => a.order - b.order)
       const activeQuestion = sortedQuestions[sequence]
       
@@ -83,7 +79,7 @@ export default function SafePlayerParamPage({
   useEffect(() => {
     if (!gameId) return
     const channel = supabase
-      .channel('safe_player_sync')
+      .channel('safe_param_player_sync')
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'games', filter: `id=eq.${gameId}` },
         (payload: any) => {
           const updated = payload.new
