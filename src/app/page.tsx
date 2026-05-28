@@ -29,7 +29,6 @@ export default function SafePlayerPage() {
     e.preventDefault()
     if (!nickname.trim()) return
 
-    // Auto-fetch the single latest active game room running in your database
     const { data: activeGames } = await supabase
       .from('games')
       .select('id, phase, quiz_set_id, current_question_sequence')
@@ -312,7 +311,7 @@ export default function SafePlayerPage() {
             </div>
 
             <div className="mt-6 text-xs font-bold text-purple-900 italic min-h-[32px] flex items-center justify-center">
-              "{swiftieLyric}"
+              &quot;{swiftieLyric}&quot;
             </div>
           </div>
         ) : (
@@ -325,7 +324,7 @@ export default function SafePlayerPage() {
             </p>
             
             <div className="mt-6 text-[11px] font-bold text-pink-200/60 italic min-h-[16px]">
-              "{swiftieLyric}"
+              &quot;{swiftieLyric}&quot;
             </div>
 
             <div className="mt-6 pt-4 border-t border-white/10 text-[10px] font-bold text-purple-400 uppercase tracking-widest">
