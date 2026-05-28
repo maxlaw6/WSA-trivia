@@ -19,10 +19,10 @@ export default function SafePlayerParamPage({
   const [choices, setChoices] = useState<any[]>([])
   const [hasAnswered, setHasAnswered] = useState(false)
 
+  // Absolute master values tracked dynamically from host stream
   const [isIntroducing, setIsIntroducing] = useState(true)
   const [timeLeft, setTimeLeft] = useState(30)
 
-  // End game victory states
   const [isWinner, setIsWinner] = useState(false)
   const [winningName, setWinningName] = useState('')
   const [loadingResult, setLoadingResult] = useState(false)
@@ -42,7 +42,6 @@ export default function SafePlayerParamPage({
       return
     }
 
-    // DUPLICATE NICKNAME SAFEGUARD
     const { data: nameCheck } = await supabase
       .from('participants')
       .select('id')
@@ -50,7 +49,7 @@ export default function SafePlayerParamPage({
       .ilike('nickname', nickname.trim())
 
     if (nameCheck && nameCheck.length > 0) {
-      alert('That nickname is taken in this room! Please add your last initial.')
+      alert('That nickname is taken! Please add your last initial.')
       return
     }
 
@@ -84,17 +83,12 @@ export default function SafePlayerParamPage({
         setActiveQuestionId(activeQuestion.id)
         setCurrentQuestionText(activeQuestion.body || 'Get Ready...')
         setChoices(activeQuestion.choices || [])
-        setIsIntroducing(true)
-        setTimeLeft(30)
       }
     }
   }
 
-  // Calculate the grand champion safely by pulling cumulative answers
   const checkPlacement = useCallback(async () => {
     setLoadingResult(true)
-    
-    // Fetch participants assigned here
     const { data: players } = await supabase
       .from('participants')
       .select('id, nickname')
@@ -106,31 +100,25 @@ export default function SafePlayerParamPage({
     }
 
     const playerIds = players.map((p: any) => String(p.id))
-
-    // Pull all positive scores logged for this group
     const { data: answersRows } = await supabase
       .from('answers')
       .select('participant_id, score')
       .in('participant_id', playerIds)
 
-    // Build a local lookup map to compile scores cleanly
     const scoreMap: Record<string, number> = {}
     playerIds.forEach(id => { scoreMap[id] = 0 })
 
     if (answersRows) {
       answersRows.forEach((ans: any) => {
         const pId = String(ans.participant_id)
-        const pointVal = Number(ans.score || 0)
         if (scoreMap[pId] !== undefined) {
-          scoreMap[pId] += pointVal
+          scoreMap[pId] += Number(ans.score || 0)
         }
       })
     }
 
-    // Identify which ID holds the top score index
     let topPlayerId = playerIds[0]
     let maxScore = -1
-
     playerIds.forEach(id => {
       if (scoreMap[id] > maxScore) {
         maxScore = scoreMap[id]
@@ -145,41 +133,14 @@ export default function SafePlayerParamPage({
         setIsWinner(true)
       }
     }
-    
     setLoadingResult(false)
   }, [gameId, nickname])
 
   useEffect(() => {
-    if (gamePhase === 'result') {
-      checkPlacement()
-    }
+    if (gamePhase === 'result') checkPlacement()
   }, [gamePhase, checkPlacement])
 
-  useEffect(() => {
-    if (gamePhase !== 'quiz' || hasAnswered) return
-
-    let introTime = 4
-    const introClock = setInterval(() => {
-      introTime -= 1
-      if (introTime <= 0) {
-        clearInterval(introClock)
-        setIsIntroducing(false)
-
-        const mainClock = setInterval(() => {
-          setTimeLeft((prev) => {
-            if (prev <= 1) {
-              clearInterval(mainClock)
-              return 0
-            }
-            return prev - 1
-          })
-        }, 1000)
-      }
-    }, 1000)
-
-    return () => clearInterval(introClock)
-  }, [gamePhase, currentSequence, hasAnswered])
-
+  // MASTER SYNC STREAM: Watches the host game state modifications in real-time
   useEffect(() => {
     if (!gameId) return
     const channel = supabase
@@ -189,13 +150,23 @@ export default function SafePlayerParamPage({
           const updated = payload.new
           setGamePhase(updated.phase)
           setCurrentSequence(updated.current_question_sequence)
-          setHasAnswered(false)
-          setIsIntroducing(true)
-          fetchSyncDetails(updated.quiz_set_id, updated.current_question_sequence)
+          
+          // HARD TIME SYNC: Take values directly from what the host laptop wrote
+          if (updated.dynamic_time_left !== undefined) {
+            setTimeLeft(Number(updated.dynamic_time_left))
+          }
+          if (updated.dynamic_is_introducing !== undefined) {
+            setIsIntroducing(Boolean(updated.dynamic_is_introducing))
+          }
+
+          if (updated.current_question_sequence !== currentSequence) {
+            setHasAnswered(false)
+            fetchSyncDetails(updated.quiz_set_id, updated.current_question_sequence)
+          }
         }
       ).subscribe()
     return () => { supabase.removeChannel(channel) }
-  }, [gameId])
+  }, [gameId, currentSequence])
 
   const handleSelectChoice = async (choice: any) => {
     if (hasAnswered || !participantId || !activeQuestionId || isIntroducing || timeLeft <= 0) return
@@ -220,7 +191,7 @@ export default function SafePlayerParamPage({
             <span className="text-xs font-bold tracking-widest text-gray-400 block uppercase mt-1">Wallace Stegner Academy</span>
           </div>
           <form onSubmit={handleJoinGame} className="space-y-4">
-            <input type="text" maxLength={12} placeholder="YOUR NICKNAME" value={nickname} onChange={(e) => setNickname(e.target.value)} className="w-full px-4 py-4 border-2 border-gray-200 rounded-xl text-center text-lg font-black tracking-wide uppercase focus:outline-none" required />
+            <input type="text" maxLength={12} placeholder="YOUR NICKNAME" value={nickname} onChange={(e) => setNickname(e.target.value)} className="w-full px-4 py-4 border-2 border-gray-200 rounded-xl text-center text-lg font-black tracking-wide uppercase" required />
             <button type="submit" className="w-full bg-gray-900 text-white font-black text-lg py-4 rounded-xl uppercase tracking-wider">Enter Game</button>
           </form>
         </div>
