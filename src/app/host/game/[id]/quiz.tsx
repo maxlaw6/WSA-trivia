@@ -129,7 +129,6 @@ export default function HostQuizView({
       const nextTime = timeLeft - 1
       setTimeLeft(nextTime)
 
-      // Broadcast the exact master time remaining directly down into the shared room row!
       await supabase
         .from('games')
         .update({ dynamic_time_left: nextTime, dynamic_is_introducing: false } as any)
@@ -140,7 +139,6 @@ export default function HostQuizView({
     return () => clearTimeout(timer)
   }, [timeLeft, isIntroducing, gameId])
 
-  // Broadcast introducing state variables
   useEffect(() => {
     if (isIntroducing && gameId) {
       supabase
@@ -163,8 +161,26 @@ export default function HostQuizView({
   if (!activeQuestion) return <div className="text-white text-center p-12">Loading quiz contents...</div>
 
   return (
-    <main className="bg-gray-900 min-h-screen text-white font-sans flex flex-col justify-between p-8 select-none">
+    <main className="bg-gray-900 min-h-screen text-white font-sans flex flex-col justify-between p-8 select-none relative overflow-hidden">
       
+      {/* Inject Custom Jello Keyframe Styles Directly */}
+      <style dangerouslySetInnerHTML={{__html: `
+        @keyframes jello-grow {
+          0% { transform: scale(1); }
+          30% { transform: scale(1.12) skewX(-10deg) skewY(-10deg); }
+          40% { transform: scale(1.08) skewX(7deg) skewY(7deg); }
+          50% { transform: scale(1.1) skewX(-5deg) skewY(-5deg); }
+          65% { transform: scale(1.09) skewX(2deg) skewY(2deg); }
+          75% { transform: scale(1.1) skewX(-1deg) skewY(-1deg); }
+          100% { transform: scale(1.1) skewX(0) skewY(0); }
+        }
+        .jello-reveal {
+          animation: jello-grow 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+          z-index: 40;
+          box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+        }
+      `}} />
+
       <div className="flex justify-between items-center bg-black/40 border border-gray-800 rounded-2xl p-4 shadow-xl">
         <div>
           <span className="text-xs font-bold text-blue-400 uppercase tracking-widest block">Wallace Stegner Academy</span>
@@ -195,24 +211,35 @@ export default function HostQuizView({
             👀 Read the Question! Choices dropping in {introCountdown}s...
           </div>
         ) : showResults ? (
-          <div className="bg-blue-500/20 text-blue-400 font-black text-md py-3 px-6 rounded-xl inline-block mb-6 uppercase tracking-wider border border-blue-500/30">
-            ⏰ Time Up! Showing Correct Answer
+          <div className="bg-green-500/20 text-green-400 border border-green-500/30 font-black text-md py-3 px-6 rounded-xl inline-block mb-6 uppercase tracking-wider scale-110 transition-transform duration-300">
+            🎉 Round Over! Revealing Answer...
           </div>
         ) : (
           <div className="h-14"></div>
         )}
 
-        <div className={`grid grid-cols-2 gap-4 text-left transition-all duration-700 ${isIntroducing ? 'opacity-25 blur-md pointer-events-none scale-95' : 'opacity-100 blur-0 scale-100'}`}>
+        <div className={`grid grid-cols-2 gap-6 text-left transition-all duration-700 ${isIntroducing ? 'opacity-25 blur-md pointer-events-none scale-95' : 'opacity-100 blur-0 scale-100'}`}>
           {choices.map((choice, idx) => {
             const gridColors = ['bg-[#e21b3c]', 'bg-[#1368ce]', 'bg-[#d89e00]', 'bg-[#26890c]']
+            
+            // Dynamic behavior logic when results are out
+            const isCorrect = choice.is_correct
+            const resultStyles = showResults 
+              ? isCorrect 
+                ? 'jello-reveal ring-4 ring-white border-transparent scale-110 z-10' 
+                : 'opacity-15 blur-[2px] scale-95 pointer-events-none'
+              : 'hover:scale-[1.02] border-b-4 border-black/20'
+
             return (
               <div
                 key={choice.id}
-                className={`${gridColors[idx % 4]} p-5 rounded-2xl shadow-lg border-b-4 border-black/20 flex items-center justify-between min-h-[90px]`}
+                className={`${gridColors[idx % 4]} p-6 rounded-2xl shadow-lg flex items-center justify-between min-h-[100px] transition-all duration-500 transform-gpu ${resultStyles}`}
               >
-                <span className="text-xl font-black uppercase tracking-wide">{choice.body}</span>
-                {showResults && choice.is_correct && (
-                  <span className="bg-white text-gray-900 rounded-full h-8 w-8 flex items-center justify-center text-md font-black shadow-md">✓</span>
+                <span className="text-2xl font-black uppercase tracking-wide">{choice.body}</span>
+                {showResults && isCorrect && (
+                  <span className="bg-white text-gray-900 rounded-full h-10 w-10 flex items-center justify-center text-xl font-black shadow-2xl ring-4 ring-green-400 animate-bounce">
+                    ✓
+                  </span>
                 )}
               </div>
             )
