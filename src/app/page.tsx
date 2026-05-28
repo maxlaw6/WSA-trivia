@@ -57,10 +57,15 @@ export default function SafePlayerPage() {
     setGamePhase(targetGame.phase)
     setCurrentSequence(targetGame.current_question_sequence)
 
+    // FORCE ONLY NICKNAME AND GAME_ID (Ignores user_id system defaults)
     const { data: player, error } = await supabase
       .from('participants')
-      .insert({ nickname: nickname.trim(), game_id: targetGame.id } as any)
-      .select().single()
+      .insert({ 
+        nickname: nickname.trim(), 
+        game_id: targetGame.id 
+      } as any)
+      .select()
+      .single()
 
     if (error) return alert(error.message)
 
