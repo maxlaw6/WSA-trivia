@@ -18,9 +18,9 @@ export default function HostQuizView({
   const [showResults, setShowResults] = useState(false)
   
   const [totalPlayers, setTotalPlayers] = useState(0)
-  const [answersCount, setAnswersCount] = useState(0)
+  const [answeredUserIds, setAnsweredUserIds] = useState<string[]>([])
 
-  // 1. Initial setup when question sequence shifts
+  // 1. Reset data structure and fetch local player baseline
   useEffect(() => {
     if (questions && questions[currentSequence]) {
       const sortedQuestions = [...questions].sort((a: any, b: any) => a.order - b.order)
@@ -29,9 +29,8 @@ export default function HostQuizView({
       setChoices(q.choices || [])
       setTimeLeft(30)
       setShowResults(false)
-      setAnswersCount(0)
+      setAnsweredUserIds([])
 
-      // Get the accurate player lobby baseline
       const fetchLobbySpecs = async () => {
         const { count } = await supabase
           .from('participants')
@@ -43,30 +42,65 @@ export default function HostQuizView({
     }
   }, [currentSequence, questions, gameId])
 
-  // 2. ULTRA-LIGHTWEIGHT REAL-TIME SUBSCRIPTION (No Polling Loops)
+  // 2. LIFECYCLE-ISOLATED SYNC ENGINE
   useEffect(() => {
     if (!activeQuestion) return
 
-    // Immediately pull the current answer snapshot for this question
-    const fetchCurrentCount = async () => {
-      const { count } = await supabase
-        .from('answers')
-        .select('*', { count: 'exact', head: true })
-        .eq('question_id', activeQuestion.id)
-      
-      setAnswersCount(count || 0)
-    }
-    fetchCurrentCount()
+    const syncActiveAnswers = async () => {
+      // Step A: Grab ONLY the participants assigned to THIS specific live game room
+      const { data: activePlayers } = await supabase
+        .from('participants')
+        .select('id')
+        .eq('game_id', gameId)
 
-    // Listen passively for insertions. Supabase pushes data ONLY when someone clicks.
+      if (!activePlayers || activePlayers.length === 0) {
+        setAnsweredUserIds([])
+        return
+      }
+
+      const activePlayerIds = activePlayers.map((p: any) => String(p.id))
+
+      // Step B: Grab answers matching this question AND submitted by our live player pool
+      const { data: currentAnswers } = await supabase
+        .from('answers')
+        .select('participant_id')
+        .eq('question_id', activeQuestion.id)
+        .in('participant_id', activePlayerIds)
+      
+      if (currentAnswers) {
+        const uniqueIds = Array.from(new Set(currentAnswers.map((ans: any) => String(ans.participant_id))))
+        setAnsweredUserIds(uniqueIds)
+      }
+    }
+    
+    // Run snapshot fetch on component load
+    syncActiveAnswers()
+
+    // Passive listener to catch incoming live clicks
     const channel = supabase
       .channel(`room_track_${activeQuestion.id}`)
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'answers', filter: `question_id=eq.${activeQuestion.id}` },
-        () => {
-          // Increment counter instantly on packet arrival
-          setAnswersCount((prev) => prev + 1)
+        async (payload) => {
+          if (payload.new && payload.new.participant_id) {
+            const incomingUserId = String(payload.new.participant_id)
+            
+            // Security verification: Confirm this answer belongs to a player in our game
+            const { data: checkPlayer } = await supabase
+              .from('participants')
+              .select('id')
+              .eq('id', incomingUserId)
+              .eq('game_id', gameId)
+              .single()
+
+            if (checkPlayer) {
+              setAnsweredUserIds((prev) => {
+                if (prev.includes(incomingUserId)) return prev
+                return [...prev, incomingUserId]
+              })
+            }
+          }
         }
       )
       .subscribe()
@@ -74,9 +108,11 @@ export default function HostQuizView({
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [activeQuestion])
+  }, [activeQuestion, gameId])
 
   // 3. Central Pacing Loop
+  const answersCount = answeredUserIds.length
+
   useEffect(() => {
     if (timeLeft <= 0) {
       setShowResults(true)
