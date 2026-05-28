@@ -3,10 +3,13 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/types/types'
 
-export default function SafePlayerPage() {
+export default function SafePlayerParamPage({
+  params: { id: gameId },
+}: {
+  params: { id: string }
+}) {
   const [nickname, setNickname] = useState('')
   const [joined, setJoined] = useState(false)
-  const [gameId, setGameId] = useState<string | null>(null)
   const [participantId, setParticipantId] = useState<string | null>(null)
   const [gamePhase, setGamePhase] = useState('lobby')
   const [currentSequence, setCurrentSequence] = useState(0)
@@ -17,28 +20,25 @@ export default function SafePlayerPage() {
     e.preventDefault()
     if (!nickname.trim()) return
 
-    const { data: activeGames } = await supabase
+    const { data: targetGame } = await supabase
       .from('games')
       .select('id, phase, quiz_set_id, current_question_sequence')
-      .order('created_at', { ascending: false })
-      .limit(1)
+      .eq('id', gameId)
+      .single()
 
-    if (!activeGames || activeGames.length === 0) {
-      alert('No active rooms found. Make sure the host has launched a game!')
+    if (!targetGame) {
+      alert('Active game room not found!')
       return
     }
 
-    const TargetGame = activeGames[0]
-    setGameId(TargetGame.id)
-    setGamePhase(TargetGame.phase)
-    setCurrentSequence(TargetGame.current_question_sequence)
+    setGamePhase(targetGame.phase)
+    setCurrentSequence(targetGame.current_question_sequence)
 
-    // Safe Insert: Stripped out default properties to prevent cache errors
     const { data: player, error } = await supabase
       .from('participants')
       .insert({
         nickname: nickname.trim(),
-        game_id: TargetGame.id
+        game_id: gameId
       } as any)
       .select()
       .single()
@@ -50,7 +50,7 @@ export default function SafePlayerPage() {
 
     setParticipantId(player.id)
     setJoined(true)
-    fetchQuestionChoices(TargetGame.quiz_set_id, TargetGame.current_question_sequence)
+    fetchQuestionChoices(targetGame.quiz_set_id, targetGame.current_question_sequence)
   }
 
   const fetchQuestionChoices = async (quizSetId: string, sequence: number) => {
@@ -69,7 +69,7 @@ export default function SafePlayerPage() {
     if (!gameId) return
 
     const channel = supabase
-      .channel('safe_player_sync')
+      .channel('safe_param_player_sync')
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'games', filter: `id=eq.${gameId}` },
@@ -92,7 +92,6 @@ export default function SafePlayerPage() {
     if (hasAnswered || !participantId) return
     setHasAnswered(true)
 
-    // Score bypass layout to ensure database updates go through regardless of schema settings
     try {
       await supabase
         .from('participants')
