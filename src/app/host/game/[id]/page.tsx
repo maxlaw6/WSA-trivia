@@ -20,7 +20,7 @@ export default function HostGamePage({
   const [currentQuestionSequence, setCurrentQuestionSequence] = useState(0)
   const [leaderboard, setLeaderboard] = useState<any[]>([])
   const [totalPlayers, setTotalPlayers] = useState(0)
-  const [rawOriginUrl, setRawOriginUrl] = useState('https://wsa-trivia.vercel.app')
+  const [rawOriginUrl, setRawOriginUrl] = useState('https://YOUR-VERCEL-PROJECT-NAME.vercel.app')
 
   // Safely grab the live deployment URL when running inside a client browser session
   useEffect(() => {
