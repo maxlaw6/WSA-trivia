@@ -4,12 +4,9 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/types/types'
 
 export default function SafePlayerPage() {
-  params: { id: gameId },
-}: {
-  params: { id: string }
-}) {
   const [nickname, setNickname] = useState('')
   const [joined, setJoined] = useState(false)
+  const [gameId, setGameId] = useState<string | null>(null)
   const [participantId, setParticipantId] = useState<string | null>(null)
   const [gamePhase, setGamePhase] = useState('lobby')
   const [currentSequence, setCurrentSequence] = useState(0)
@@ -19,10 +16,10 @@ export default function SafePlayerPage() {
   const [choices, setChoices] = useState<any[]>([])
   const [hasAnswered, setHasAnswered] = useState(false)
 
-  // Absolute master values tracked dynamically from host stream
   const [isIntroducing, setIsIntroducing] = useState(true)
   const [timeLeft, setTimeLeft] = useState(30)
 
+  // End game victory states
   const [isWinner, setIsWinner] = useState(false)
   const [winningName, setWinningName] = useState('')
   const [loadingResult, setLoadingResult] = useState(false)
@@ -31,34 +28,38 @@ export default function SafePlayerPage() {
     e.preventDefault()
     if (!nickname.trim()) return
 
-    const { data: targetGame } = await supabase
+    const { data: activeGames } = await supabase
       .from('games')
       .select('id, phase, quiz_set_id, current_question_sequence')
-      .eq('id', gameId)
-      .single()
+      .order('created_at', { ascending: false })
+      .limit(1)
 
-    if (!targetGame) {
-      alert('Active game room not found!')
+    if (!activeGames || activeGames.length === 0) {
+      alert('No active rooms found!')
       return
     }
 
+    const targetGame = activeGames[0]
+
+    // DUPLICATE NICKNAME SAFEGUARD
     const { data: nameCheck } = await supabase
       .from('participants')
       .select('id')
-      .eq('game_id', gameId)
+      .eq('game_id', targetGame.id)
       .ilike('nickname', nickname.trim())
 
     if (nameCheck && nameCheck.length > 0) {
-      alert('That nickname is taken! Please add your last initial.')
+      alert('That nickname is taken in this room! Please add your last initial.')
       return
     }
 
+    setGameId(targetGame.id)
     setGamePhase(targetGame.phase)
     setCurrentSequence(targetGame.current_question_sequence)
 
     const { data: player, error } = await supabase
       .from('participants')
-      .insert({ nickname: nickname.trim(), game_id: gameId } as any)
+      .insert({ nickname: nickname.trim(), game_id: targetGame.id } as any)
       .select().single()
 
     if (error) return alert(error.message)
@@ -87,12 +88,13 @@ export default function SafePlayerPage() {
     }
   }
 
-  const checkPlacement = useCallback(async () => {
+  const checkPlacement = useCallback(async (targetGameId: string) => {
     setLoadingResult(true)
+    
     const { data: players } = await supabase
       .from('participants')
       .select('id, nickname')
-      .eq('game_id', gameId)
+      .eq('game_id', targetGameId)
 
     if (!players || players.length === 0) {
       setLoadingResult(false)
@@ -100,6 +102,7 @@ export default function SafePlayerPage() {
     }
 
     const playerIds = players.map((p: any) => String(p.id))
+
     const { data: answersRows } = await supabase
       .from('answers')
       .select('participant_id, score')
@@ -119,6 +122,7 @@ export default function SafePlayerPage() {
 
     let topPlayerId = playerIds[0]
     let maxScore = -1
+
     playerIds.forEach(id => {
       if (scoreMap[id] > maxScore) {
         maxScore = scoreMap[id]
@@ -133,25 +137,27 @@ export default function SafePlayerPage() {
         setIsWinner(true)
       }
     }
+    
     setLoadingResult(false)
-  }, [gameId, nickname])
+  }, [nickname])
 
   useEffect(() => {
-    if (gamePhase === 'result') checkPlacement()
-  }, [gamePhase, checkPlacement])
+    if (gamePhase === 'result' && gameId) {
+      checkPlacement(gameId)
+    }
+  }, [gamePhase, gameId, checkPlacement])
 
-  // MASTER SYNC STREAM: Watches the host game state modifications in real-time
+  // MASTER SYNC STREAM
   useEffect(() => {
     if (!gameId) return
     const channel = supabase
-      .channel('safe_param_player_sync')
+      .channel('safe_player_sync')
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'games', filter: `id=eq.${gameId}` },
         (payload: any) => {
           const updated = payload.new
           setGamePhase(updated.phase)
           setCurrentSequence(updated.current_question_sequence)
           
-          // HARD TIME SYNC: Take values directly from what the host laptop wrote
           if (updated.dynamic_time_left !== undefined) {
             setTimeLeft(Number(updated.dynamic_time_left))
           }
