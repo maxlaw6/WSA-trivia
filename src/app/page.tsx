@@ -11,6 +11,7 @@ export default function SafePlayerPage() {
   const [gamePhase, setGamePhase] = useState('lobby')
   const [currentSequence, setCurrentSequence] = useState(0)
   
+  const [activeQuestionId, setActiveQuestionId] = useState<string | null>(null)
   const [currentQuestionText, setCurrentQuestionText] = useState('')
   const [timeLeft, setTimeLeft] = useState(30)
   const [choices, setChoices] = useState<any[]>([])
@@ -56,11 +57,11 @@ export default function SafePlayerPage() {
       .single()
 
     if (quizData && quizData.questions) {
-      // Sort questions strictly by their order matching the host's logic
       const sortedQuestions = [...quizData.questions].sort((a: any, b: any) => a.order - b.order)
       const activeQuestion = sortedQuestions[sequence]
       
       if (activeQuestion) {
+        setActiveQuestionId(activeQuestion.id)
         setCurrentQuestionText(activeQuestion.body || 'Get Ready...')
         setChoices(activeQuestion.choices || [])
         setTimeLeft(30)
@@ -93,12 +94,20 @@ export default function SafePlayerPage() {
   }, [gameId])
 
   const handleSelectChoice = async (choice: any) => {
-    if (hasAnswered || !participantId) return
+    if (hasAnswered || !participantId || !activeQuestionId) return
     setHasAnswered(true)
-    try {
-      await supabase.from('participants').update({ score: 100 } as any).eq('id', participantId)
-    } catch (e) {}
-    await supabase.from('answers').insert({ participant_id: participantId, question_id: choice.question_id, choice_id: choice.id } as any)
+
+    // Direct, explicit payload matching your database columns exactly
+    const { error } = await supabase.from('answers').insert({
+      participant_id: participantId,
+      question_id: activeQuestionId,
+      choice_id: choice.id,
+      score: choice.is_correct ? 100 : 0
+    } as any)
+
+    if (error) {
+      console.error("Insert failed structural constraints:", error.message)
+    }
   }
 
   const gridColors = ['bg-[#e21b3c]', 'bg-[#1368ce]', 'bg-[#d89e00]', 'bg-[#26890c]']
