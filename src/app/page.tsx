@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/types/types'
 
-export default function SafePlayerParamPage({
+export default function SafePlayerPage() {
   params: { id: gameId },
 }: {
   params: { id: string }
