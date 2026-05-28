@@ -4,9 +4,12 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/types/types'
 
 export default function SafePlayerPage() {
+  params: { id: gameId },
+}: {
+  params: { id: string }
+}) {
   const [nickname, setNickname] = useState('')
   const [joined, setJoined] = useState(false)
-  const [gameId, setGameId] = useState<string | null>(null)
   const [participantId, setParticipantId] = useState<string | null>(null)
   const [gamePhase, setGamePhase] = useState('lobby')
   const [currentSequence, setCurrentSequence] = useState(0)
@@ -17,9 +20,7 @@ export default function SafePlayerPage() {
   const [hasAnswered, setHasAnswered] = useState(false)
 
   const [isIntroducing, setIsIntroducing] = useState(true)
-  const [timeLeft, setTimeLeft] = useState(30)
 
-  // End game victory states
   const [isWinner, setIsWinner] = useState(false)
   const [winningName, setWinningName] = useState('')
   const [loadingResult, setLoadingResult] = useState(false)
@@ -28,38 +29,34 @@ export default function SafePlayerPage() {
     e.preventDefault()
     if (!nickname.trim()) return
 
-    const { data: activeGames } = await supabase
+    const { data: targetGame } = await supabase
       .from('games')
       .select('id, phase, quiz_set_id, current_question_sequence')
-      .order('created_at', { ascending: false })
-      .limit(1)
+      .eq('id', gameId)
+      .single()
 
-    if (!activeGames || activeGames.length === 0) {
-      alert('No active rooms found!')
+    if (!targetGame) {
+      alert('Active game room not found!')
       return
     }
 
-    const targetGame = activeGames[0]
-
-    // DUPLICATE NICKNAME SAFEGUARD
     const { data: nameCheck } = await supabase
       .from('participants')
       .select('id')
-      .eq('game_id', targetGame.id)
+      .eq('game_id', gameId)
       .ilike('nickname', nickname.trim())
 
     if (nameCheck && nameCheck.length > 0) {
-      alert('That nickname is taken in this room! Please add your last initial.')
+      alert('That nickname is taken! Please add your last initial.')
       return
     }
 
-    setGameId(targetGame.id)
     setGamePhase(targetGame.phase)
     setCurrentSequence(targetGame.current_question_sequence)
 
     const { data: player, error } = await supabase
       .from('participants')
-      .insert({ nickname: nickname.trim(), game_id: targetGame.id } as any)
+      .insert({ nickname: nickname.trim(), game_id: gameId } as any)
       .select().single()
 
     if (error) return alert(error.message)
@@ -88,13 +85,12 @@ export default function SafePlayerPage() {
     }
   }
 
-  const checkPlacement = useCallback(async (targetGameId: string) => {
+  const checkPlacement = useCallback(async () => {
     setLoadingResult(true)
-    
     const { data: players } = await supabase
       .from('participants')
       .select('id, nickname')
-      .eq('game_id', targetGameId)
+      .eq('game_id', gameId)
 
     if (!players || players.length === 0) {
       setLoadingResult(false)
@@ -102,7 +98,6 @@ export default function SafePlayerPage() {
     }
 
     const playerIds = players.map((p: any) => String(p.id))
-
     const { data: answersRows } = await supabase
       .from('answers')
       .select('participant_id, score')
@@ -122,7 +117,6 @@ export default function SafePlayerPage() {
 
     let topPlayerId = playerIds[0]
     let maxScore = -1
-
     playerIds.forEach(id => {
       if (scoreMap[id] > maxScore) {
         maxScore = scoreMap[id]
@@ -137,30 +131,24 @@ export default function SafePlayerPage() {
         setIsWinner(true)
       }
     }
-    
     setLoadingResult(false)
-  }, [nickname])
+  }, [gameId, nickname])
 
   useEffect(() => {
-    if (gamePhase === 'result' && gameId) {
-      checkPlacement(gameId)
-    }
-  }, [gamePhase, gameId, checkPlacement])
+    if (gamePhase === 'result') checkPlacement()
+  }, [gamePhase, checkPlacement])
 
   // MASTER SYNC STREAM
   useEffect(() => {
     if (!gameId) return
     const channel = supabase
-      .channel('safe_player_sync')
+      .channel('safe_param_player_sync')
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'games', filter: `id=eq.${gameId}` },
         (payload: any) => {
           const updated = payload.new
           setGamePhase(updated.phase)
           setCurrentSequence(updated.current_question_sequence)
           
-          if (updated.dynamic_time_left !== undefined) {
-            setTimeLeft(Number(updated.dynamic_time_left))
-          }
           if (updated.dynamic_is_introducing !== undefined) {
             setIsIntroducing(Boolean(updated.dynamic_is_introducing))
           }
@@ -175,7 +163,8 @@ export default function SafePlayerPage() {
   }, [gameId, currentSequence])
 
   const handleSelectChoice = async (choice: any) => {
-    if (hasAnswered || !participantId || !activeQuestionId || isIntroducing || timeLeft <= 0) return
+    // HARD LOCKOUT GUARD: Reject insertions if time expired or phase switched to results
+    if (hasAnswered || !participantId || !activeQuestionId || isIntroducing || gamePhase === 'show_results') return
     setHasAnswered(true)
 
     await supabase.from('answers').insert({
@@ -190,7 +179,7 @@ export default function SafePlayerPage() {
 
   if (!joined) {
     return (
-      <main className="bg-[#1e3a8a] min-h-screen w-full flex flex-col justify-center items-center px-4 text-white">
+      <main className="bg-[#1e3a8a] min-h-screen w-full flex flex-col justify-center items-center px-4 text-white pt-8">
         <div className="w-full max-w-sm bg-white text-gray-900 rounded-3xl p-8 shadow-2xl text-center">
           <div className="mb-4">
             <span className="text-3xl font-black block tracking-tight text-[#1e3a8a] uppercase leading-none">WSA</span>
@@ -207,16 +196,16 @@ export default function SafePlayerPage() {
 
   if (gamePhase === 'lobby') {
     return (
-      <main className="bg-[#1e3a8a] min-h-screen w-full flex flex-col justify-center items-center text-white">
+      <main className="bg-[#1e3a8a] min-h-screen w-full flex flex-col justify-center items-center text-white pt-8">
         <h2 className="text-2xl font-black uppercase">Registered!</h2>
         <p className="mt-2 font-bold bg-white/20 px-3 py-1 rounded">{nickname}</p>
       </main>
     )
   }
 
-  if (gamePhase === 'quiz') {
+  if (gamePhase === 'quiz' || gamePhase === 'show_results') {
     return (
-      <main className="bg-gray-100 min-h-screen w-full flex flex-col text-gray-900 select-none">
+      <main className="bg-gray-100 min-h-screen w-full flex flex-col text-gray-900 select-none pt-8">
         <div className="bg-[#1e3a8a] text-white py-3 px-4 shadow-md flex justify-between items-center shrink-0">
           <span className="font-black text-xs uppercase">WSA Staff Trivia</span>
           <div className="bg-white/25 px-2.5 py-1 rounded text-xs font-bold">Q: {currentSequence + 1}</div>
@@ -225,8 +214,8 @@ export default function SafePlayerPage() {
         <div className="w-full max-w-md mx-auto px-4 pt-4">
           <div className="bg-white rounded-2xl p-4 shadow-sm text-center">
             <h2 className="text-lg font-extrabold text-gray-800 mb-2">{currentQuestionText}</h2>
-            <div className={`inline-block px-3 py-0.5 rounded-full text-xs font-black ${isIntroducing ? 'bg-blue-50 text-blue-600' : timeLeft <= 0 ? 'bg-gray-100 text-gray-500' : 'bg-red-50 text-red-600'}`}>
-              {isIntroducing ? '👀 Previewing...' : timeLeft <= 0 ? '⏰ Time Up!' : `⏱️ ${timeLeft}s Left`}
+            <div className={`inline-block px-3 py-0.5 rounded-full text-xs font-black ${isIntroducing ? 'bg-blue-50 text-blue-600' : gamePhase === 'show_results' ? 'bg-gray-100 text-gray-500' : 'bg-red-50 text-red-600'}`}>
+              {isIntroducing ? '👀 Previewing...' : gamePhase === 'show_results' ? '⏰ Time Up!' : '⏱️ Active Round'}
             </div>
           </div>
         </div>
@@ -236,7 +225,7 @@ export default function SafePlayerPage() {
             <div className="text-center bg-white/80 backdrop-blur p-6 rounded-2xl shadow-md w-full border border-gray-200/50 animate-pulse">
               <span className="text-sm font-black text-[#1e3a8a] uppercase tracking-wider block">Get Ready!</span>
             </div>
-          ) : timeLeft <= 0 ? (
+          ) : gamePhase === 'show_results' ? (
             <div className="text-center bg-white p-6 rounded-2xl shadow-md w-full border border-gray-200 text-gray-400 font-bold uppercase tracking-wide">
               ⏰ Locked out! Look at board for results.
             </div>
@@ -260,7 +249,7 @@ export default function SafePlayerPage() {
 
   if (gamePhase === 'result') {
     return (
-      <main className="bg-[#1e3a8a] min-h-screen w-full flex flex-col justify-center items-center px-4 text-white text-center select-none">
+      <main className="bg-[#1e3a8a] min-h-screen w-full flex flex-col justify-center items-center px-4 text-white text-center select-none pt-8">
         {loadingResult ? (
           <p className="font-bold text-xl animate-pulse">Calculating scores...</p>
         ) : isWinner ? (
