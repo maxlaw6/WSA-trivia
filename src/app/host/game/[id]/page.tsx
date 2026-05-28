@@ -22,14 +22,16 @@ export default function HostGamePage({
   const [totalPlayers, setTotalPlayers] = useState(0)
   const [rawOriginUrl, setRawOriginUrl] = useState('https://wsa-trivia.vercel.app')
 
-  // Safely grab the live deployment URL when running inside a client browser session
+  // Sliding Lyric Overlay State Engines
+  const [activeLyric, setActiveLyric] = useState("Baby, let the games begin...")
+  const [lyricTrigger, setLyricTrigger] = useState(true)
+
   useEffect(() => {
     if (typeof window !== 'undefined') {
       setRawOriginUrl(window.location.origin)
     }
   }, [])
 
-  // Fetch baseline room specifications
   const fetchRoomData = useCallback(async () => {
     const { data: game } = await supabase
       .from('games')
@@ -54,7 +56,6 @@ export default function HostGamePage({
     }
   }, [gameId])
 
-  // Compile scores from answers table natively for high volume
   const fetchLeaderboard = useCallback(async () => {
     const { data: players } = await supabase
       .from('participants')
@@ -84,7 +85,7 @@ export default function HostGamePage({
     const compiled = players.map((p: any) => ({
       nickname: p.nickname,
       score: scoreMap[String(p.id)] || 0
-    })).sort((a, b) => b.score - a.score).slice(0, 5) // Grab top 5
+    })).sort((a, b) => b.score - a.score).slice(0, 5)
 
     setLeaderboard(compiled)
   }, [gameId])
@@ -93,7 +94,6 @@ export default function HostGamePage({
     fetchRoomData()
   }, [fetchRoomData])
 
-  // Monitor live data state configurations
   useEffect(() => {
     if (!gameId) return
     const channel = supabase
@@ -115,7 +115,6 @@ export default function HostGamePage({
     return () => { supabase.removeChannel(channel) }
   }, [gameId, fetchRoomData, fetchLeaderboard])
 
-  // Count active players inside the lobby loop
   useEffect(() => {
     if (currentScreen !== AdminScreens.lobby) return
     
@@ -137,6 +136,37 @@ export default function HostGamePage({
     return () => { supabase.removeChannel(channel) }
   }, [currentScreen, gameId])
 
+  // DYNAMIC LYRIC SWOOP ENGINE: Cycles text and flashes animation triggers
+  useEffect(() => {
+    if (currentScreen !== AdminScreens.result) return
+
+    const swiftLyrics = [
+      "Long live the walls we crashed through! 🏰",
+      "I knew you were trouble when you walked in! ⚡",
+      "Best believe I'm still bejeweled, I can still make the whole place shimmer! ✨",
+      "The players gonna play, play, play, play, play... 🎶",
+      "Shake it off, shake it off! 💃",
+      "Cause darling, I'm a nightmare dressed like a daydream... 💭",
+      "You belong with me! 🫶",
+      "Karma is a queen! 👑",
+      "Are you ready for it? 🔥"
+    ]
+
+    let lyricIdx = 0
+    const interval = setInterval(() => {
+      setLyricTrigger(false) // Trigger drop phase
+      
+      setTimeout(() => {
+        lyricIdx = (lyricIdx + 1) % swiftLyrics.length
+        setActiveLyric(swiftLyrics[lyricIdx])
+        setLyricTrigger(true) // Trigger swooping entrance
+      }, 600) // Timing split matching animation frames
+
+    }, 4500)
+
+    return () => clearInterval(interval)
+  }, [currentScreen])
+
   const handleStartGame = async () => {
     await supabase
       .from('games')
@@ -148,8 +178,6 @@ export default function HostGamePage({
 
   if (currentScreen === AdminScreens.lobby) {
     const directJoinUrl = `${rawOriginUrl}/game/${gameId}`
-    
-    // FIREWALL SAFE FALLBACK: If google is blocked, use third-party dynamic open QR generator fallback engine
     const secureFallbackQr = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(directJoinUrl)}`
 
     return (
@@ -167,7 +195,6 @@ export default function HostGamePage({
           }
         `}} />
 
-        {/* Top Minimal Branding Track */}
         <div className="flex justify-between items-center border-b border-gray-800 pb-4 w-full">
           <div>
             <span className="text-xs font-black text-[#1368ce] tracking-widest uppercase block">Public Charter Network</span>
@@ -180,27 +207,17 @@ export default function HostGamePage({
           </div>
         </div>
 
-        {/* Giant Main Layout Container Split */}
         <div className="grid grid-cols-12 gap-12 my-auto items-center w-full max-w-6xl mx-auto">
-          
-          {/* LEFT PANEL: High Contrast Automatic Scan Matrix */}
           <div className="col-span-5 bg-white p-6 rounded-3xl shadow-2xl flex flex-col items-center justify-center border-4 border-blue-500 transform hover:scale-[1.01] transition-transform">
             <span className="text-xs font-black text-gray-500 tracking-widest uppercase mb-4 text-center">
               📱 SCAN QR CODE TO JOIN NOW
             </span>
-            
-            {/* SWITCHED TO SECURITY RE-ROUTED QR SERVER TO BYPASS NETWORK FILTERS */}
             <img 
               src={secureFallbackQr} 
               alt="Scan Room Entry QR Code" 
               className="w-full max-w-[320px] aspect-square block bg-white rounded-xl shadow-inner select-none"
               draggable="false"
-              onError={(e) => {
-                // Double Fallback: If both external micro-services fail due to extreme firewalls, use clear direct textual backup layout
-                e.currentTarget.style.display = 'none';
-              }}
             />
-            
             <div className="mt-4 text-center bg-gray-50 px-4 py-2.5 rounded-xl border border-gray-200 w-full">
               <span className="text-[10px] uppercase font-black text-gray-400 block tracking-wider">Alternative Web link</span>
               <span className="text-sm font-black text-blue-600 break-all select-all tracking-tight uppercase">
@@ -209,10 +226,8 @@ export default function HostGamePage({
             </div>
           </div>
 
-          {/* RIGHT PANEL: Controls, Birthday Greeting, & User Registry Counter */}
           <div className="col-span-7 space-y-6">
             <div className="bg-black/30 border border-gray-800 p-8 rounded-3xl shadow-xl">
-              
               <div className="mb-4 bg-gradient-to-r from-pink-500/20 via-purple-500/20 to-blue-500/20 border border-pink-500/40 rounded-full py-2 px-6 inline-block animate-pulse">
                 <span className="text-xs font-black tracking-widest bday-text uppercase">
                   🎉 DON&apos;T FORGET IT&apos;S ANNA&apos;S BIRTHDAY TODAY! 🎂
@@ -246,7 +261,6 @@ export default function HostGamePage({
           </div>
         </div>
 
-        {/* Footer Banner */}
         <div className="text-center text-[10px] uppercase font-bold tracking-widest text-gray-600 border-t border-gray-800/60 pt-4 w-full">
           Wallace Stegner Academy • Campus Administration Arena
         </div>
@@ -269,16 +283,29 @@ export default function HostGamePage({
     return (
       <main className="bg-purple-950 min-h-screen text-white flex flex-col justify-center items-center p-8 select-none relative overflow-hidden">
         
-        {/* CSS EMULATED CONFETTI GENERATOR + GLOW EFFECTS */}
+        {/* SWOOPING LYRIC ANIMATION + SPARKLING KEYFRAMES */}
         <style dangerouslySetInnerHTML={{__html: `
           @keyframes float-rain {
             0% { transform: translateY(-50px) rotate(0deg); opacity: 1; }
             100% { transform: translateY(105vh) rotate(360deg); opacity: 0.3; }
           }
           @keyframes text-sparkle {
-            0% { text-shadow: 0 0 15px #f472b6, 0 0 30px #c084fc; }
-            50% { text-shadow: 0 0 25px #60a5fa, 0 0 45px #f472b6; }
-            100% { text-shadow: 0 0 15px #f472b6, 0 0 30px #c084fc; }
+            0% { text-shadow: 0 0 15px #f472b6, 0 0 30px #c084fc; border-color: #f472b6; }
+            50% { text-shadow: 0 0 25px #60a5fa, 0 0 45px #34d399; border-color: #60a5fa; }
+            100% { text-shadow: 0 0 15px #f472b6, 0 0 30px #c084fc; border-color: #f472b6; }
+          }
+          @keyframes lyric-swoop {
+            0% { transform: translateX(-100%) translateY(-30px) scale(0.85) skewX(15deg); opacity: 0; filter: blur(8px); }
+            15% { transform: translateX(5%) translateY(0px) scale(1.02) skewX(-5deg); opacity: 0.8; filter: blur(0); }
+            20% { transform: translateX(0px) translateY(0px) scale(1) skewX(0); opacity: 1; }
+            80% { transform: translateX(0px) translateY(5px) scale(1) skewX(0); opacity: 1; }
+            85% { transform: translateX(-5%) translateY(5px) scale(0.98) skewX(5deg); opacity: 0.8; }
+            100% { transform: translateX(120%) translateY(20px) scale(0.9) skewX(-15deg); opacity: 0; filter: blur(8px); }
+          }
+          @keyframes lyric-color-cycle {
+            0% { color: #f472b6; text-shadow: 0 0 10px rgba(244,114,182,0.6); }
+            50% { color: #60a5fa; text-shadow: 0 0 15px rgba(96,165,250,0.6); }
+            100% { color: #34d399; text-shadow: 0 0 10px rgba(52,211,153,0.6); }
           }
           .confetti-piece {
             position: absolute;
@@ -291,9 +318,12 @@ export default function HostGamePage({
           .swift-glow-title {
             animation: text-sparkle 3s ease-in-out infinite;
           }
+          .swooping-lyric-track {
+            animation: lyric-swoop 4.2s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards, lyric-color-cycle 4s linear infinite;
+          }
         `}} />
 
-        {/* Generate 25 floating colored glitter particles natively */}
+        {/* Falling Confetti Layer */}
         <div className="absolute inset-0 pointer-events-none overflow-hidden">
           {Array.from({ length: 25 }).map((_, i) => {
             const colors = ['#f472b6', '#c084fc', '#60a5fa', '#fbbf24', '#34d399']
@@ -315,17 +345,25 @@ export default function HostGamePage({
           })}
         </div>
 
-        {/* Master Leaderboard Card */}
-        <div className="max-w-2xl w-full bg-gradient-to-br from-purple-900/60 to-black/50 backdrop-blur rounded-3xl p-10 shadow-2xl border-4 border-pink-400 text-center relative z-10 scale-100">
+        {/* DYNAMIC FLOATING BACKGROUND LYRICS TRACK (Swoops across the top background lane) */}
+        <div className="absolute top-10 left-0 right-0 w-full overflow-hidden pointer-events-none h-24 flex items-center justify-center z-0 px-4">
+          {lyricTrigger && (
+            <span className="text-3xl font-black uppercase tracking-widest italic font-sans whitespace-nowrap text-center text-purple-400/20 select-none transform-gpu space-x-2 block border-y border-white/5 py-2 w-full bg-black/5 backdrop-blur-[1px] max-w-4xl rounded-xl custom-track-line text-ellipsis overflow-hidden min-h-[52px] swooping-lyric-track">
+              🎵 {activeLyric}
+            </span>
+          )}
+        </div>
+
+        {/* Master Leaderboard Card Component */}
+        <div className="max-w-2xl w-full bg-gradient-to-br from-purple-900/60 to-black/50 backdrop-blur rounded-3xl p-10 shadow-2xl border-4 text-center relative z-10 scale-100 swift-glow-title">
           <span className="text-4xl mb-2 block animate-bounce">👑</span>
-          <h1 className="text-4xl font-black uppercase tracking-tight swift-glow-title text-pink-300">
+          <h1 className="text-4xl font-black uppercase tracking-tight text-pink-300">
             THE ERAS LEADERBOARD
           </h1>
           <span className="text-[10px] font-black tracking-widest text-white bg-pink-500 px-3 py-0.5 rounded-full inline-block mt-2 uppercase border border-pink-300/40">
             Taylor&apos;s Version 🎸
           </span>
 
-          {/* Player Ranking Rows Stack */}
           <div className="mt-10 space-y-3.5 text-left">
             {leaderboard.length === 0 ? (
               <p className="text-center text-purple-300 font-bold animate-pulse">Fetching champions list...</p>
