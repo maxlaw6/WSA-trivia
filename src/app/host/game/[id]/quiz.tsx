@@ -20,7 +20,7 @@ export default function HostQuizView({
   const [totalPlayers, setTotalPlayers] = useState(0)
   const [answersCount, setAnswersCount] = useState(0)
 
-  // 1. Initial Setup and Player Counter
+  // 1. Initial setup for the active question
   useEffect(() => {
     if (questions && questions[currentSequence]) {
       const sortedQuestions = [...questions].sort((a: any, b: any) => a.order - b.order)
@@ -31,48 +31,47 @@ export default function HostQuizView({
       setShowResults(false)
       setAnswersCount(0)
 
-      const fetchParticipantCount = async () => {
+      // Get total players currently registered in the game
+      const fetchTotalPlayers = async () => {
         const { count } = await supabase
           .from('participants')
           .select('*', { count: 'exact', head: true })
           .eq('game_id', gameId)
-        
         setTotalPlayers(count || 0)
       }
-      fetchParticipantCount()
+      fetchTotalPlayers()
     }
   }, [currentSequence, questions, gameId])
 
-  // 2. High-Performance Broad Real-Time Listener
+  // 2. BULLETPROOF POLLING ENGINE (Replaces unreliable real-time websockets)
   useEffect(() => {
     if (!activeQuestion) return
 
-    const channel = supabase
-      .channel('host_global_answer_counter')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'answers' },
-        (payload) => {
-          // Verify if this raw insertion matches the question being displayed
-          if (payload.new && payload.new.question_id === activeQuestion.id) {
-            setAnswersCount((prev) => prev + 1)
-          }
-        }
-      )
-      .subscribe()
-
-    return () => {
-      supabase.removeChannel(channel)
+    // Immediately fetch the count right when the question loads
+    const checkAnswersDirectly = async () => {
+      const { count } = await supabase
+        .from('answers')
+        .select('*', { count: 'exact', head: true })
+        .eq('question_id', activeQuestion.id)
+      
+      setAnswersCount(count || 0)
     }
+    checkAnswersDirectly()
+
+    // Query the database directly every 1.5 seconds for the absolute true count
+    const intervalId = setInterval(checkAnswersDirectly, 1500)
+
+    return () => clearInterval(intervalId)
   }, [activeQuestion])
 
-  // 3. Central Timing Loop & Auto-Advance Pacer
+  // 3. Central Pacing Loop (Host Controls the Time)
   useEffect(() => {
     if (timeLeft <= 0) {
       setShowResults(true)
       return
     }
 
+    // If everyone answered, slam the timer to zero immediately
     if (totalPlayers > 0 && answersCount >= totalPlayers) {
       setTimeLeft(0)
       setShowResults(true)
@@ -101,6 +100,7 @@ export default function HostQuizView({
   return (
     <main className="bg-gray-900 min-h-screen text-white font-sans flex flex-col justify-between p-8">
       
+      {/* Top Dash Status Bar */}
       <div className="flex justify-between items-center bg-black/40 border border-gray-800 rounded-2xl p-4 shadow-xl">
         <div>
           <span className="text-xs font-bold text-blue-400 uppercase tracking-widest block">Wallace Stegner Academy</span>
@@ -119,6 +119,7 @@ export default function HostQuizView({
         </div>
       </div>
 
+      {/* Main Core Question Visualizer */}
       <div className="my-auto max-w-4xl w-full mx-auto text-center py-6">
         <h2 className="text-4xl font-extrabold tracking-tight text-white mb-12">
           {activeQuestion.body}
@@ -148,6 +149,7 @@ export default function HostQuizView({
         </div>
       </div>
 
+      {/* Bottom Interface Bar */}
       <div className="flex justify-end pt-4 border-t border-gray-800">
         <button
           onClick={handleNextQuestion}
