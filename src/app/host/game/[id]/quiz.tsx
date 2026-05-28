@@ -42,12 +42,23 @@ export default function HostQuizView({
     }
   }, [currentSequence, questions, gameId])
 
-  // 2. STABLE FLAT-ARRAY POLLING ENGINE
+  // 2. ULTRA-COMPATIBLE RAW COUNT ENGINE (Bypasses Javascript Array Mismatches)
   useEffect(() => {
     if (!activeQuestion) return
 
     const checkAnswersDirectly = async () => {
-      // Fetch active participants
+      // Fetch all answers submitted for this question directly from the master table
+      const { data: allAnswers, error } = await supabase
+        .from('answers')
+        .select('participant_id')
+        .eq('question_id', activeQuestion.id)
+
+      if (error || !allAnswers || allAnswers.length === 0) {
+        setAnswersCount(0)
+        return
+      }
+
+      // Fetch active participants for this specific game session
       const { data: activePlayers } = await supabase
         .from('participants')
         .select('id')
@@ -58,21 +69,17 @@ export default function HostQuizView({
         return
       }
 
-      // CRITICAL FIX: Convert object array to flat string array explicitly
-      const playerIds: string[] = activePlayers.map((p: any) => String(p.id))
-
-      // Query answers explicitly filtering by this question and our live flat player IDs
-      const { count } = await supabase
-        .from('answers')
-        .select('*', { count: 'exact', head: true })
-        .eq('question_id', activeQuestion.id)
-        .in('participant_id', playerIds)
+      // Map both pools to clean, matching uppercase/lowercase standard strings to ensure absolute validation
+      const livePlayerIds = activePlayers.map((p: any) => String(p.id).toLowerCase())
+      const validAnswers = allAnswers.filter((ans: any) => 
+        livePlayerIds.includes(String(ans.participant_id).toLowerCase())
+      )
       
-      setAnswersCount(count || 0)
+      setAnswersCount(validAnswers.length)
     }
 
     checkAnswersDirectly()
-    const intervalId = setInterval(checkAnswersDirectly, 1500)
+    const intervalId = setInterval(checkAnswersDirectly, 1000)
 
     return () => clearInterval(intervalId)
   }, [activeQuestion, gameId])
