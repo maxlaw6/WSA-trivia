@@ -5,7 +5,6 @@ import { supabase } from '@/types/types'
 
 export default function RootPlayerPage() {
   const [nickname, setNickname] = useState('')
-  const [pin, setPin] = useState('')
   const [joined, setJoined] = useState(false)
   const [gameId, setGameId] = useState<string | null>(null)
   const [participantId, setParticipantId] = useState<string | null>(null)
@@ -14,12 +13,11 @@ export default function RootPlayerPage() {
   const [choices, setChoices] = useState<any[]>([])
   const [hasAnswered, setHasAnswered] = useState(false)
 
-  // Join the game by PIN or active game search
+  // Join the game by finding the most recent active game session
   const handleJoinGame = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!nickname.trim()) return
 
-    // Find the active game session
     const { data: activeGames } = await supabase
       .from('games')
       .select('id, phase, quiz_set_id, current_question_sequence')
@@ -70,7 +68,7 @@ export default function RootPlayerPage() {
     }
   }
 
-  // Real-time synchronization
+  // Real-time synchronization with host actions
   useEffect(() => {
     if (!gameId) return
 
@@ -120,16 +118,16 @@ export default function RootPlayerPage() {
 
   const gridColors = ['bg-[#e21b3c]', 'bg-[#1368ce]', 'bg-[#d89e00]', 'bg-[#26890c]']
 
-  // PANEL 1: REGISTRATION LOBBY
+  // PANEL 1: REGISTRATION LOBBY WITH LOGO
   if (!joined) {
     return (
       <main className="bg-[#1e3a8a] min-h-screen w-full flex flex-col justify-center items-center px-4 m-0 p-0 box-border text-white">
         <div className="w-full max-w-sm bg-white text-gray-900 rounded-3xl p-6 shadow-2xl text-center">
           <img 
-  src="https://wsacharter.org/wp-content/uploads/2023/11/logo.png" 
-  alt="Wallace Stegner Academy Logo"
-  className="h-16 mx-auto mb-5 object-contain"
-/>
+            src="https://wsacharter.org/wp-content/uploads/2023/11/logo.png" 
+            alt="Wallace Stegner Academy Logo"
+            className="h-16 mx-auto mb-4 object-contain"
+          />
           <p className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-6">Staff Trivia</p>
           
           <form onSubmit={handleJoinGame} className="space-y-4">
@@ -172,11 +170,10 @@ export default function RootPlayerPage() {
     )
   }
 
-  // PANEL 3: INTERACTIVE PLAYER CONTROLLER (THE BOX SYSTEM)
+  // PANEL 3: INTERACTIVE PLAYER CONTROLLER (THE SYMMETRICAL BOX SYSTEM)
   if (gamePhase === 'quiz') {
     return (
       <main className="bg-gray-100 min-h-screen w-full flex flex-col m-0 p-0 box-border text-gray-900">
-        {/* Fixed Header */}
         <div className="bg-[#1e3a8a] text-white py-3 px-4 shadow-md flex justify-between items-center shrink-0">
           <span className="font-black tracking-tight text-xs uppercase">WSA Staff Trivia</span>
           <div className="bg-white/25 px-2.5 py-1 rounded text-xs font-bold uppercase">
@@ -184,7 +181,6 @@ export default function RootPlayerPage() {
           </div>
         </div>
 
-        {/* Symmetry Enforced Action Panel */}
         <div className="flex-1 w-full max-w-md mx-auto p-4 flex flex-col justify-center items-center box-border">
           {!hasAnswered ? (
             <div className="w-full h-full flex flex-col justify-between gap-3 box-border">
@@ -201,7 +197,7 @@ export default function RootPlayerPage() {
           ) : (
             <div className="text-center bg-white p-6 rounded-2xl shadow-xl border border-gray-100 w-full box-border">
               <div className="inline-block p-3 bg-blue-50 text-[#1e3a8a] rounded-full mb-3">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 animate-bounce" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg xmlns="http://www.w3.org/2000/xl" className="h-8 w-8 animate-bounce" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                 </svg>
               </div>
@@ -234,12 +230,4 @@ export default function RootPlayerPage() {
   }
 
   return null
-}'use client'
-
-export default function Home() {
-  return (
-    <main className="flex min-h-screen flex-col items-center justify-between p-12">
-      <div className="m-auto p-8 bg-black  text-white">Host Home</div>
-    </main>
-  )
 }
