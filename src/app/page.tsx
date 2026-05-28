@@ -4,12 +4,9 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/types/types'
 
 export default function SafePlayerPage() {
-  params: { id: gameId },
-}: {
-  params: { id: string }
-}) {
   const [nickname, setNickname] = useState('')
   const [joined, setJoined] = useState(false)
+  const [gameId, setGameId] = useState<string | null>(null)
   const [participantId, setParticipantId] = useState<string | null>(null)
   const [gamePhase, setGamePhase] = useState('lobby')
   const [currentSequence, setCurrentSequence] = useState(0)
@@ -31,21 +28,23 @@ export default function SafePlayerPage() {
     e.preventDefault()
     if (!nickname.trim()) return
 
-    const { data: targetGame } = await supabase
+    const { data: activeGames } = await supabase
       .from('games')
       .select('id, phase, quiz_set_id, current_question_sequence')
-      .eq('id', gameId)
-      .single()
+      .order('created_at', { ascending: false })
+      .limit(1)
 
-    if (!targetGame) {
-      alert('Active game room not found!')
+    if (!activeGames || activeGames.length === 0) {
+      alert('No active rooms found!')
       return
     }
+
+    const targetGame = activeGames[0]
 
     const { data: nameCheck } = await supabase
       .from('participants')
       .select('id')
-      .eq('game_id', gameId)
+      .eq('game_id', targetGame.id)
       .ilike('nickname', nickname.trim())
 
     if (nameCheck && nameCheck.length > 0) {
@@ -53,12 +52,13 @@ export default function SafePlayerPage() {
       return
     }
 
+    setGameId(targetGame.id)
     setGamePhase(targetGame.phase)
     setCurrentSequence(targetGame.current_question_sequence)
 
     const { data: player, error } = await supabase
       .from('participants')
-      .insert({ nickname: nickname.trim(), game_id: gameId } as any)
+      .insert({ nickname: nickname.trim(), game_id: targetGame.id } as any)
       .select().single()
 
     if (error) return alert(error.message)
@@ -87,12 +87,12 @@ export default function SafePlayerPage() {
     }
   }
 
-  const checkPlacement = useCallback(async () => {
+  const checkPlacement = useCallback(async (targetGameId: string) => {
     setLoadingResult(true)
     const { data: players } = await supabase
       .from('participants')
       .select('id, nickname')
-      .eq('game_id', gameId)
+      .eq('game_id', targetGameId)
 
     if (!players || players.length === 0) {
       setLoadingResult(false)
@@ -134,17 +134,17 @@ export default function SafePlayerPage() {
       }
     }
     setLoadingResult(false)
-  }, [gameId, nickname])
+  }, [nickname])
 
   useEffect(() => {
-    if (gamePhase === 'result') checkPlacement()
-  }, [gamePhase, checkPlacement])
+    if (gamePhase === 'result' && gameId) checkPlacement(gameId)
+  }, [gamePhase, gameId, checkPlacement])
 
   // MASTER SYNC STREAM
   useEffect(() => {
     if (!gameId) return
     const channel = supabase
-      .channel('safe_param_player_sync')
+      .channel('safe_player_sync')
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'games', filter: `id=eq.${gameId}` },
         (payload: any) => {
           const updated = payload.new
@@ -168,7 +168,6 @@ export default function SafePlayerPage() {
   }, [gameId, currentSequence])
 
   const handleSelectChoice = async (choice: any) => {
-    // SOLIDIFIED MECHANICAL LOCK: Immediate rejection if time matches 0 or phase states match
     if (hasAnswered || !participantId || !activeQuestionId || isIntroducing || timeLeft <= 0 || gamePhase === 'show_results') {
       return
     }
