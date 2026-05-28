@@ -200,4 +200,21 @@ export default function SafePlayerParamPage({
 
   if (gamePhase === 'result') {
     return (
-      <main className="bg-[#1e3a8a] min-h-screen w-full flex flex-col justify-center items-center px-4 text-white text-center
+      <main className="bg-[#1e3a8a] min-h-screen w-full flex flex-col justify-center items-center px-4 text-white text-center">
+        <div className="bg-white text-gray-900 rounded-3xl p-6 shadow-2xl max-w-xs w-full">
+          <div className="text-3xl mb-1">🏁</div>
+          <h2 className="text-2xl font-black tracking-tight text-[#1e3a8a] uppercase">Quiz Finished!</h2>
+          <div className="my-4 py-4 px-3 bg-gray-50 rounded-xl border border-gray-100">
+            <span className="text-xs font-bold text-gray-400 uppercase tracking-wider block">Player Badge</span>
+            <span className="text-xl font-black text-gray-800 tracking-wide uppercase block mt-0.5">{nickname}</span>
+          </div>
+          <div className="text-[10px] font-bold text-gray-300 uppercase tracking-widest pt-2 border-t border-gray-100">
+            Wallace Stegner Academy
+          </div>
+        </div>
+      </main>
+    )
+  }
+
+  return null
+}
