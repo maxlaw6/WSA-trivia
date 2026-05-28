@@ -20,6 +20,10 @@ export default function HostQuizView({
   const [totalPlayers, setTotalPlayers] = useState(0)
   const [answeredUserIds, setAnsweredUserIds] = useState<string[]>([])
 
+  // New State: Introduction countdown window (4 seconds)
+  const [isIntroducing, setIsIntroducing] = useState(true)
+  const [introCountdown, setIntroCountdown] = useState(4)
+
   // 1. Reset data structure and fetch local player baseline
   useEffect(() => {
     if (questions && questions[currentSequence]) {
@@ -30,6 +34,10 @@ export default function HostQuizView({
       setTimeLeft(30)
       setShowResults(false)
       setAnsweredUserIds([])
+      
+      // Reset the intro window sequence
+      setIsIntroducing(true)
+      setIntroCountdown(4)
 
       const fetchLobbySpecs = async () => {
         const { count } = await supabase
@@ -42,12 +50,27 @@ export default function HostQuizView({
     }
   }, [currentSequence, questions, gameId])
 
-  // 2. LIFECYCLE-ISOLATED SYNC ENGINE
+  // 2. 4-Second Introduction Clock Loop
   useEffect(() => {
-    if (!activeQuestion) return
+    if (!isIntroducing) return
+
+    if (introCountdown <= 0) {
+      setIsIntroducing(false)
+      return
+    }
+
+    const introTimer = setTimeout(() => {
+      setIntroCountdown((prev) => prev - 1)
+    }, 1000)
+
+    return () => clearTimeout(introTimer)
+  }, [introCountdown, isIntroducing])
+
+  // 3. LIFECYCLE-ISOLATED SYNC ENGINE (Only counts clicks AFTER intro finishes)
+  useEffect(() => {
+    if (!activeQuestion || isIntroducing) return
 
     const syncActiveAnswers = async () => {
-      // Step A: Grab ONLY the participants assigned to THIS specific live game room
       const { data: activePlayers } = await supabase
         .from('participants')
         .select('id')
@@ -60,7 +83,6 @@ export default function HostQuizView({
 
       const activePlayerIds = activePlayers.map((p: any) => String(p.id))
 
-      // Step B: Grab answers matching this question AND submitted by our live player pool
       const { data: currentAnswers } = await supabase
         .from('answers')
         .select('participant_id')
@@ -73,10 +95,8 @@ export default function HostQuizView({
       }
     }
     
-    // Run snapshot fetch on component load
     syncActiveAnswers()
 
-    // Passive listener to catch incoming live clicks
     const channel = supabase
       .channel(`room_track_${activeQuestion.id}`)
       .on(
@@ -86,7 +106,6 @@ export default function HostQuizView({
           if (payload.new && payload.new.participant_id) {
             const incomingUserId = String(payload.new.participant_id)
             
-            // Security verification: Confirm this answer belongs to a player in our game
             const { data: checkPlayer } = await supabase
               .from('participants')
               .select('id')
@@ -108,12 +127,13 @@ export default function HostQuizView({
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [activeQuestion, gameId])
+  }, [activeQuestion, gameId, isIntroducing])
 
-  // 3. Central Pacing Loop
+  // 4. Central Pacing Loop (Only ticks down when introduction completes)
   const answersCount = answeredUserIds.length
 
   useEffect(() => {
+    if (isIntroducing) return
     if (timeLeft <= 0) {
       setShowResults(true)
       return
@@ -130,7 +150,7 @@ export default function HostQuizView({
     }, 1000)
 
     return () => clearTimeout(timer)
-  }, [timeLeft, answersCount, totalPlayers])
+  }, [timeLeft, answersCount, totalPlayers, isIntroducing])
 
   const handleNextQuestion = async () => {
     const nextIndex = currentSequence + 1
@@ -144,8 +164,9 @@ export default function HostQuizView({
   if (!activeQuestion) return <div className="text-white text-center p-12">Loading quiz contents...</div>
 
   return (
-    <main className="bg-gray-900 min-h-screen text-white font-sans flex flex-col justify-between p-8">
+    <main className="bg-gray-900 min-h-screen text-white font-sans flex flex-col justify-between p-8 select-none">
       
+      {/* Header Dashboard Grid */}
       <div className="flex justify-between items-center bg-black/40 border border-gray-800 rounded-2xl p-4 shadow-xl">
         <div>
           <span className="text-xs font-bold text-blue-400 uppercase tracking-widest block">Wallace Stegner Academy</span>
@@ -155,27 +176,38 @@ export default function HostQuizView({
         <div className="flex gap-4 items-center">
           <div className="bg-gray-800 px-4 py-2 rounded-xl text-center border border-gray-700">
             <span className="text-[10px] uppercase font-black text-gray-400 block tracking-wider">Responses</span>
-            <span className="text-lg font-black text-green-400">{answersCount} / {totalPlayers || '---'}</span>
+            <span className="text-lg font-black text-green-400">
+              {isIntroducing ? '---' : `${answersCount} / ${totalPlayers || '---'}`}
+            </span>
           </div>
           
-          <div className={`px-5 py-2 rounded-xl font-black text-lg border transition-colors ${timeLeft <= 5 ? 'bg-red-500/20 border-red-500 text-red-400 animate-pulse' : 'bg-black/30 border-gray-700 text-white'}`}>
-            ⏱️ {timeLeft}s
+          <div className={`px-5 py-2 rounded-xl font-black text-lg border transition-all ${isIntroducing ? 'bg-blue-600 border-blue-400 text-white animate-pulse' : timeLeft <= 5 ? 'bg-red-500/20 border-red-500 text-red-400 animate-pulse' : 'bg-black/30 border-gray-700 text-white'}`}>
+            {isIntroducing ? `Ready: ${introCountdown}s` : `⏱️ ${timeLeft}s`}
           </div>
         </div>
       </div>
 
+      {/* Main Board Center Display */}
       <div className="my-auto max-w-4xl w-full mx-auto text-center py-6">
-        <h2 className="text-4xl font-extrabold tracking-tight text-white mb-12">
+        <h2 className="text-4xl font-extrabold tracking-tight text-white mb-12 leading-snug">
           {activeQuestion.body}
         </h2>
 
-        {showResults && (
+        {/* Dynamic State Alert Boxes */}
+        {isIntroducing ? (
+          <div className="bg-blue-600/20 border border-blue-500/40 text-blue-400 font-black text-xl py-4 px-10 rounded-2xl inline-block tracking-widest uppercase mb-6 shadow-xl animate-pulse">
+            👀 Read the Question! Choices dropping in {introCountdown}s...
+          </div>
+        ) : showResults ? (
           <div className="bg-blue-500/20 text-blue-400 font-black text-md py-3 px-6 rounded-xl inline-block mb-6 uppercase tracking-wider border border-blue-500/30">
             ⏰ Time Up! Showing Correct Answer
           </div>
+        ) : (
+          <div className="h-14"></div>
         )}
 
-        <div className="grid grid-cols-2 gap-4 text-left">
+        {/* Choice Matrix Box with Intro Blurring Filter */}
+        <div className={`grid grid-cols-2 gap-4 text-left transition-all duration-700 ${isIntroducing ? 'opacity-25 blur-md pointer-events-none scale-95' : 'opacity-100 blur-0 scale-100'}`}>
           {choices.map((choice, idx) => {
             const gridColors = ['bg-[#e21b3c]', 'bg-[#1368ce]', 'bg-[#d89e00]', 'bg-[#26890c]']
             return (
@@ -193,10 +225,12 @@ export default function HostQuizView({
         </div>
       </div>
 
+      {/* Bottom Control Track */}
       <div className="flex justify-end pt-4 border-t border-gray-800">
         <button
+          disabled={isIntroducing}
           onClick={handleNextQuestion}
-          className="bg-blue-600 hover:bg-blue-500 text-white font-black text-xl py-4 px-12 rounded-xl shadow-md uppercase tracking-wider border-b-4 border-blue-800"
+          className={`font-black text-xl py-4 px-12 rounded-xl shadow-md uppercase tracking-wider border-b-4 transition-all ${isIntroducing ? 'bg-gray-800 border-gray-900 text-gray-600 cursor-not-allowed opacity-50' : 'bg-blue-600 border-blue-800 hover:bg-blue-500 text-white'}`}
         >
           {currentSequence + 1 === questions.length ? 'Finish Game 🏁' : 'Next Question ➡️'}
         </button>
