@@ -109,10 +109,10 @@ export default function GamePlayerParamPage({
     }
 
     await supabase.from('answers').insert({
-      participant_id: participantId,
-      question_id: choice.question_id,
-      choice_id: choice.id,
-    })
+  participant_id: participantId,
+  question_id: choice.question_id,
+  choice_id: choice.id,
+} as any)
   }
 
   const gridColors = ['bg-[#e21b3c]', 'bg-[#1368ce]', 'bg-[#d89e00]', 'bg-[#26890c]']
