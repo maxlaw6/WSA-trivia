@@ -94,12 +94,15 @@ export default function Home({
             table: 'games',
             filter: `id=eq.${gameId}`,
           },
-          (payload) => {
-            // start the quiz game
-            const game = payload.new as Game
-            setCurrentQuestionSequence(game.current_question_sequence)
-            setCurrentScreen(game.phase as AdminScreens)
-          }
+        (payload) => {
+  const game = payload.new as Game
+  setCurrentScreen(game.phase as AdminScreens)
+  
+  // Only change the question sequence if we are already in the quiz phase!
+  if (game.phase === 'quiz') {
+    setCurrentQuestionSequence(game.current_question_sequence)
+  }
+}
         )
         .subscribe()
 
