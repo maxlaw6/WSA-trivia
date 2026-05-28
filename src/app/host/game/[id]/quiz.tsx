@@ -31,7 +31,7 @@ export default function HostQuizView({
       setShowResults(false)
       setAnswersCount(0)
 
-      // Get total players currently registered in the game
+      // Get total players currently registered in THIS live game session
       const fetchTotalPlayers = async () => {
         const { count } = await supabase
           .from('participants')
@@ -43,35 +43,47 @@ export default function HostQuizView({
     }
   }, [currentSequence, questions, gameId])
 
-  // 2. BULLETPROOF POLLING ENGINE (Replaces unreliable real-time websockets)
+  // 2. SESSION-ISOLATED POLLING ENGINE
   useEffect(() => {
     if (!activeQuestion) return
 
-    // Immediately fetch the count right when the question loads
     const checkAnswersDirectly = async () => {
+      // First, fetch the IDs of players belonging strictly to this active game
+      const { data: activePlayers } = await supabase
+        .from('participants')
+        .select('id')
+        .eq('game_id', gameId)
+
+      if (!activePlayers || activePlayers.length === 0) {
+        setAnswersCount(0)
+        return
+      }
+
+      const playerIds = activePlayers.map(p => p.id)
+
+      // Only count answers matching this question AND submitted by active session players
       const { count } = await supabase
         .from('answers')
         .select('*', { count: 'exact', head: true })
         .eq('question_id', activeQuestion.id)
+        .in('participant_id', playerIds)
       
       setAnswersCount(count || 0)
     }
-    checkAnswersDirectly()
 
-    // Query the database directly every 1.5 seconds for the absolute true count
+    checkAnswersDirectly()
     const intervalId = setInterval(checkAnswersDirectly, 1500)
 
     return () => clearInterval(intervalId)
-  }, [activeQuestion])
+  }, [activeQuestion, gameId])
 
-  // 3. Central Pacing Loop (Host Controls the Time)
+  // 3. Central Pacing Loop
   useEffect(() => {
     if (timeLeft <= 0) {
       setShowResults(true)
       return
     }
 
-    // If everyone answered, slam the timer to zero immediately
     if (totalPlayers > 0 && answersCount >= totalPlayers) {
       setTimeLeft(0)
       setShowResults(true)
@@ -100,7 +112,6 @@ export default function HostQuizView({
   return (
     <main className="bg-gray-900 min-h-screen text-white font-sans flex flex-col justify-between p-8">
       
-      {/* Top Dash Status Bar */}
       <div className="flex justify-between items-center bg-black/40 border border-gray-800 rounded-2xl p-4 shadow-xl">
         <div>
           <span className="text-xs font-bold text-blue-400 uppercase tracking-widest block">Wallace Stegner Academy</span>
@@ -119,7 +130,6 @@ export default function HostQuizView({
         </div>
       </div>
 
-      {/* Main Core Question Visualizer */}
       <div className="my-auto max-w-4xl w-full mx-auto text-center py-6">
         <h2 className="text-4xl font-extrabold tracking-tight text-white mb-12">
           {activeQuestion.body}
@@ -149,7 +159,6 @@ export default function HostQuizView({
         </div>
       </div>
 
-      {/* Bottom Interface Bar */}
       <div className="flex justify-end pt-4 border-t border-gray-800">
         <button
           onClick={handleNextQuestion}
