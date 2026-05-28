@@ -1,88 +1,61 @@
-import { TIME_TIL_CHOICE_REVEAL } from '@/constants'
-import { Answer, Participant, Question, supabase } from '@/types/types'
-import { useEffect, useRef, useState } from 'react'
-import { CountdownCircleTimer } from 'react-countdown-circle-timer'
+'use client'
 
-export default function Quiz({
-  question: question,
-  questionCount: questionCount,
+import { Choice, Question, supabase } from '@/types/types'
+import { useEffect, useState } from 'react'
+
+export default function HostQuizView({
+  questions,
+  currentSequence,
   gameId,
-  participants,
 }: {
-  question: Question
-  questionCount: number
+  questions: Question[]
+  currentSequence: number
   gameId: string
-  participants: Participant[]
 }) {
-  const [isAnswerRevealed, setIsAnswerRevealed] = useState(false)
+  const [activeQuestion, setActiveQuestion] = useState<Question | null>(null)
+  const [choices, setChoices] = useState<Choice[]>([])
+  const [timeLeft, setTimeLeft] = useState(30)
+  const [showResults, setShowResults] = useState(false)
+  
+  const [totalPlayers, setTotalPlayers] = useState(0)
+  const [answersCount, setAnswersCount] = useState(0)
 
-  const [hasShownChoices, setHasShownChoices] = useState(false)
-
-  const [answers, setAnswers] = useState<Answer[]>([])
-
-  const answerStateRef = useRef<Answer[]>()
-
-  answerStateRef.current = answers
-
-  const getNextQuestion = async () => {
-    var updateData
-    if (questionCount == question.order + 1) {
-      updateData = { phase: 'result' }
-    } else {
-      updateData = {
-        current_question_sequence: question.order + 1,
-        is_answer_revealed: false,
-      }
-    }
-
-    const { data, error } = await supabase
-      .from('games')
-      .update(updateData)
-      .eq('id', gameId)
-    if (error) {
-      return alert(error.message)
-    }
-  }
-
-  const onTimeUp = async () => {
-    setIsAnswerRevealed(true)
-    await supabase
-      .from('games')
-      .update({
-        is_answer_revealed: true,
-      })
-      .eq('id', gameId)
-  }
-
+  // 1. Initial Setup and Player Counter
   useEffect(() => {
-    setIsAnswerRevealed(false)
-    setHasShownChoices(false)
-    setAnswers([])
+    if (questions && questions[currentSequence]) {
+      const sortedQuestions = [...questions].sort((a: any, b: any) => a.order - b.order)
+      const q = sortedQuestions[currentSequence]
+      setActiveQuestion(q)
+      setChoices(q.choices || [])
+      setTimeLeft(30)
+      setShowResults(false)
+      setAnswersCount(0)
 
-    setTimeout(() => {
-      setHasShownChoices(true)
-    }, TIME_TIL_CHOICE_REVEAL)
+      const fetchParticipantCount = async () => {
+        const { count } = await supabase
+          .from('participants')
+          .select('*', { count: 'exact', head: true })
+          .eq('game_id', gameId)
+        
+        setTotalPlayers(count || 0)
+      }
+      fetchParticipantCount()
+    }
+  }, [currentSequence, questions, gameId])
+
+  // 2. High-Performance Broad Real-Time Listener
+  useEffect(() => {
+    if (!activeQuestion) return
 
     const channel = supabase
-      .channel('answers')
+      .channel('host_global_answer_counter')
       .on(
         'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'answers',
-          filter: `question_id=eq.${question.id}`,
-        },
+        { event: 'INSERT', schema: 'public', table: 'answers' },
         (payload) => {
-          setAnswers((currentAnswers) => {
-            return [...currentAnswers, payload.new as Answer]
-          })
-
-          if (
-            (answerStateRef.current?.length ?? 0) + 1 ===
-            participants.length
-          ) {
-            onTimeUp()
+          // Verify if this raw insertion matches the question being displayed
+          if (payload.new && payload.new.question_id === activeQuestion.id) {
+            setAnswersCount((prev) => prev + 1)
           }
         }
       )
@@ -91,166 +64,99 @@ export default function Quiz({
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [question.id])
+  }, [activeQuestion])
+
+  // 3. Central Timing Loop & Auto-Advance Pacer
+  useEffect(() => {
+    if (timeLeft <= 0) {
+      setShowResults(true)
+      return
+    }
+
+    if (totalPlayers > 0 && answersCount >= totalPlayers) {
+      setTimeLeft(0)
+      setShowResults(true)
+      return
+    }
+
+    const timer = setTimeout(() => {
+      setTimeLeft((prev) => prev - 1)
+    }, 1000)
+
+    return () => clearTimeout(timer)
+  }, [timeLeft, answersCount, totalPlayers])
+
+  const handleNextQuestion = async () => {
+    const nextIndex = currentSequence + 1
+    
+    if (nextIndex >= questions.length) {
+      await supabase.from('games').update({ phase: 'result' }).eq('id', gameId)
+    } else {
+      await supabase.from('games').update({ current_question_sequence: nextIndex }).eq('id', gameId)
+    }
+  }
+
+  if (!activeQuestion) return <div className="text-white text-center p-12">Loading quiz contents...</div>
 
   return (
-    <div className="h-screen flex flex-col items-stretch bg-slate-900 relative">
-      <div className="absolute right-4 top-4">
-        {isAnswerRevealed && (
-          <button
-            className="p-2 bg-white text-black rounded hover:bg-gray-200"
-            onClick={getNextQuestion}
-          >
-            Next
-          </button>
-        )}
+    <main className="bg-gray-900 min-h-screen text-white font-sans flex flex-col justify-between p-8">
+      
+      <div className="flex justify-between items-center bg-black/40 border border-gray-800 rounded-2xl p-4 shadow-xl">
+        <div>
+          <span className="text-xs font-bold text-blue-400 uppercase tracking-widest block">Wallace Stegner Academy</span>
+          <h1 className="text-xl font-black uppercase tracking-tight">Question {currentSequence + 1} of {questions.length}</h1>
+        </div>
+        
+        <div className="flex gap-4 items-center">
+          <div className="bg-gray-800 px-4 py-2 rounded-xl text-center border border-gray-700">
+            <span className="text-[10px] uppercase font-black text-gray-400 block tracking-wider">Responses</span>
+            <span className="text-lg font-black text-green-400">{answersCount} / {totalPlayers || '---'}</span>
+          </div>
+          
+          <div className={`px-5 py-2 rounded-xl font-black text-lg border transition-colors ${timeLeft <= 5 ? 'bg-red-500/20 border-red-500 text-red-400 animate-pulse' : 'bg-black/30 border-gray-700 text-white'}`}>
+            ⏱️ {timeLeft}s
+          </div>
+        </div>
       </div>
 
-      <div className="text-center">
-        <h2 className="pb-4 text-3xl bg-white font-bold mx-24 my-12 p-4 rounded inline-block">
-          {question.body}
+      <div className="my-auto max-w-4xl w-full mx-auto text-center py-6">
+        <h2 className="text-4xl font-extrabold tracking-tight text-white mb-12">
+          {activeQuestion.body}
         </h2>
-      </div>
 
-      <div className="flex-grow text-white px-8">
-        {hasShownChoices && !isAnswerRevealed && (
-          <div className="flex justify-between items-center">
-            <div className="text-5xl">
-              <CountdownCircleTimer
-                onComplete={() => {
-                  onTimeUp()
-                }}
-                isPlaying
-                duration={20}
-                colors={['#004777', '#F7B801', '#A30000', '#A30000']}
-                colorsTime={[7, 5, 2, 0]}
-              >
-                {({ remainingTime }) => remainingTime}
-              </CountdownCircleTimer>
-            </div>
-            <div className="text-center">
-              <div className="text-6xl pb-4">{answers.length}</div>
-              <div className="text-3xl">Answers</div>
-            </div>
+        {showResults && (
+          <div className="bg-blue-500/20 text-blue-400 font-black text-md py-3 px-6 rounded-xl inline-block mb-6 uppercase tracking-wider border border-blue-500/30">
+            ⏰ Time Up! Showing Correct Answer
           </div>
         )}
-        {isAnswerRevealed && (
-          <div className="flex justify-center">
-            {question.choices.map((choice, index) => (
+
+        <div className="grid grid-cols-2 gap-4 text-left">
+          {choices.map((choice, idx) => {
+            const gridColors = ['bg-[#e21b3c]', 'bg-[#1368ce]', 'bg-[#d89e00]', 'bg-[#26890c]']
+            return (
               <div
                 key={choice.id}
-                className="mx-2 h-48 w-24 flex flex-col items-stretch justify-end"
+                className={`${gridColors[idx % 4]} p-5 rounded-2xl shadow-lg border-b-4 border-black/20 flex items-center justify-between min-h-[90px]`}
               >
-                <div className="flex-grow relative">
-                  <div
-                    style={{
-                      height: `${
-                        (answers.filter(
-                          (answer) => answer.choice_id === choice.id
-                        ).length *
-                          100) /
-                        (answers.length || 1)
-                      }%`,
-                    }}
-                    className={`absolute bottom-0 left-0 right-0 mb-1 rounded-t ${
-                      index === 0
-                        ? 'bg-red-500'
-                        : index === 1
-                        ? 'bg-blue-500'
-                        : index === 2
-                        ? 'bg-yellow-500'
-                        : 'bg-green-500'
-                    }`}
-                  ></div>
-                </div>
-                <div
-                  className={`mt-1 text-white text-lg text-center py-2 rounded-b ${
-                    index === 0
-                      ? 'bg-red-500'
-                      : index === 1
-                      ? 'bg-blue-500'
-                      : index === 2
-                      ? 'bg-yellow-500'
-                      : 'bg-green-500'
-                  }`}
-                >
-                  {
-                    answers.filter((answer) => answer.choice_id === choice.id)
-                      .length
-                  }
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {hasShownChoices && (
-        <div className="flex justify-between flex-wrap p-4">
-          {question.choices.map((choice, index) => (
-            <div key={choice.id} className="w-1/2 p-1">
-              <div
-                className={`px-4 py-6 w-full text-2xl rounded font-bold text-white flex justify-between
-                ${
-                  index === 0
-                    ? 'bg-red-500'
-                    : index === 1
-                    ? 'bg-blue-500'
-                    : index === 2
-                    ? 'bg-yellow-500'
-                    : 'bg-green-500'
-                }
-                ${isAnswerRevealed && !choice.is_correct ? 'opacity-60' : ''}
-               `}
-              >
-                <div>{choice.body}</div>
-                {isAnswerRevealed && (
-                  <div>
-                    {choice.is_correct && (
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        strokeWidth={5}
-                        stroke="currentColor"
-                        className="w-6 h-6"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="m4.5 12.75 6 6 9-13.5"
-                        />
-                      </svg>
-                    )}
-                    {!choice.is_correct && (
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        strokeWidth={5}
-                        stroke="currentColor"
-                        className="w-6 h-6"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M6 18 18 6M6 6l12 12"
-                        />
-                      </svg>
-                    )}
-                  </div>
+                <span className="text-xl font-black uppercase tracking-wide">{choice.body}</span>
+                {showResults && choice.is_correct && (
+                  <span className="bg-white text-gray-900 rounded-full h-8 w-8 flex items-center justify-center text-md font-black shadow-md">✓</span>
                 )}
               </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <div className="flex text-white py-2 px-4 items-center bg-black">
-        <div className="text-2xl">
-          {question.order + 1}/{questionCount}
+            )
+          })}
         </div>
       </div>
-    </div>
+
+      <div className="flex justify-end pt-4 border-t border-gray-800">
+        <button
+          onClick={handleNextQuestion}
+          className="bg-blue-600 hover:bg-blue-500 text-white font-black text-xl py-4 px-12 rounded-xl shadow-md uppercase tracking-wider border-b-4 border-blue-800"
+        >
+          {currentSequence + 1 === questions.length ? 'Finish Game 🏁' : 'Next Question ➡️'}
+        </button>
+      </div>
+
+    </main>
   )
 }
