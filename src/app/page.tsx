@@ -16,7 +16,6 @@ export default function SafePlayerPage() {
   const [choices, setChoices] = useState<any[]>([])
   const [hasAnswered, setHasAnswered] = useState(false)
 
-  // Absolute master values tracked dynamically from host stream
   const [isIntroducing, setIsIntroducing] = useState(true)
   const [timeLeft, setTimeLeft] = useState(30)
 
@@ -24,10 +23,13 @@ export default function SafePlayerPage() {
   const [winningName, setWinningName] = useState('')
   const [loadingResult, setLoadingResult] = useState(false)
 
+  const [swiftieLyric, setSwiftieLyric] = useState("Baby, let the games begin...")
+
   const handleJoinGame = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!nickname.trim()) return
 
+    // Auto-fetch the single latest active game room running in your database
     const { data: activeGames } = await supabase
       .from('games')
       .select('id, phase, quiz_set_id, current_question_sequence')
@@ -35,7 +37,7 @@ export default function SafePlayerPage() {
       .limit(1)
 
     if (!activeGames || activeGames.length === 0) {
-      alert('No active rooms found!')
+      alert('No active rooms found! Make sure the host has created a lobby.')
       return
     }
 
@@ -139,6 +141,30 @@ export default function SafePlayerPage() {
   useEffect(() => {
     if (gamePhase === 'result' && gameId) checkPlacement(gameId)
   }, [gamePhase, gameId, checkPlacement])
+
+  useEffect(() => {
+    if (gamePhase !== 'result') return
+
+    const lyrics = [
+      "Long live the walls we crashed through! 🏰",
+      "I knew you were trouble when you walked in! ⚡",
+      "Best believe I'm still bejeweled, I can still make the whole place shimmer! ✨",
+      "The players gonna play, play, play, play, play... 🎶",
+      "Shake it off, shake it off! 💃",
+      "Cause darling, I'm a nightmare dressed like a daydream... 💭",
+      "You belong with me! 🫶",
+      "Karma is a queen! 👑",
+      "Are you ready for it? 🔥"
+    ]
+
+    let lyricIndex = 0
+    const lyricInterval = setInterval(() => {
+      lyricIndex = (lyricIndex + 1) % lyrics.length
+      setSwiftieLyric(lyrics[lyricIndex])
+    }, 3000)
+
+    return () => clearInterval(lyricInterval)
+  }, [gamePhase])
 
   // MASTER SYNC STREAM
   useEffect(() => {
@@ -255,29 +281,54 @@ export default function SafePlayerPage() {
 
   if (gamePhase === 'result') {
     return (
-      <main className="bg-[#1e3a8a] min-h-screen w-full flex flex-col justify-center items-center px-4 text-white text-center select-none pt-8">
+      <main className="bg-purple-950 min-h-screen w-full flex flex-col justify-center items-center px-4 text-white text-center select-none pt-8 relative overflow-hidden">
+        
+        <style dangerouslySetInnerHTML={{__html: `
+          @keyframes glow-shift {
+            0% { text-shadow: 0 0 10px #f472b6, 0 0 20px #c084fc; }
+            50% { text-shadow: 0 0 15px #60a5fa, 0 0 30px #34d399; }
+            100% { text-shadow: 0 0 10px #f472b6, 0 0 20px #c084fc; }
+          }
+          .swift-glow {
+            animation: glow-shift 4s ease-in-out infinite;
+          }
+        `}} />
+
         {loadingResult ? (
           <p className="font-bold text-xl animate-pulse">Calculating scores...</p>
         ) : isWinner ? (
-          <div className="bg-yellow-400 text-gray-900 rounded-3xl p-8 shadow-2xl max-w-sm w-full border-4 border-white">
-            <div className="text-5xl mb-2">🏆</div>
-            <h2 className="text-3xl font-black tracking-tight uppercase">YOU WON!</h2>
-            <p className="font-extrabold text-sm mt-2 tracking-wide text-amber-950">
-              📸 SCREENSHOT THIS WIN! It is proof you had the most knowledge!
+          <div className="bg-gradient-to-br from-yellow-400 via-pink-400 to-purple-400 text-gray-900 rounded-3xl p-8 shadow-2xl max-w-sm w-full border-4 border-white">
+            <div className="text-6xl mb-2 animate-bounce">👑</div>
+            <h2 className="text-3xl font-black tracking-tight uppercase leading-none">THE ERAS CHAMPION!</h2>
+            <span className="text-[9px] font-black tracking-widest text-purple-900 bg-white/40 px-2 py-0.5 rounded-full inline-block mt-2 uppercase">Taylor Version 🎸</span>
+            
+            <p className="font-extrabold text-sm mt-4 tracking-wide text-purple-950 leading-snug">
+              📸 SCREENSHOT THIS WIN!<br />
+              Prove you have the master knowledge!
             </p>
-            <div className="mt-6 bg-white rounded-xl py-3 px-4 font-black tracking-wide border-2 border-amber-600">
+            
+            <div className="mt-6 bg-white/90 backdrop-blur rounded-2xl py-4 px-4 font-black tracking-wide text-2xl text-purple-950 border-b-4 border-purple-300 uppercase">
               {nickname.toUpperCase()}
+            </div>
+
+            <div className="mt-6 text-xs font-bold text-purple-900 italic min-h-[32px] flex items-center justify-center">
+              "{swiftieLyric}"
             </div>
           </div>
         ) : (
-          <div className="bg-white text-gray-900 rounded-3xl p-8 shadow-2xl max-w-sm w-full border border-gray-100">
-            <div className="text-4xl mb-2">🤝</div>
-            <h2 className="text-2xl font-black tracking-tight text-[#1e3a8a] uppercase">THANK YOU FOR PLAYING!</h2>
-            <p className="text-sm text-gray-500 font-bold mt-2 leading-relaxed">
-              Sorry, maybe next time! 🌟<br />
-              Winner: <span className="font-black text-gray-800 bg-gray-100 px-2 py-0.5 rounded">{winningName || '---'}</span>
+          <div className="bg-white/10 backdrop-blur text-white rounded-3xl p-8 shadow-2xl max-w-sm w-full border border-white/15">
+            <div className="text-4xl mb-2">🫶</div>
+            <h2 className="text-2xl font-black tracking-tight text-pink-300 uppercase leading-none swift-glow">ENTERTAINMENT OVER!</h2>
+            <p className="text-xs text-purple-200 font-bold mt-3 leading-relaxed">
+              You had a marvelous time ruining everything! 🌟<br />
+              <span className="block mt-2 text-sm text-white">Grand Champion: <span className="font-black text-yellow-300 bg-black/30 px-2 py-0.5 rounded border border-white/10">{winningName || '---'}</span></span>
             </p>
-            <div className="mt-6 pt-4 border-t border-gray-100 text-[10px] font-bold text-gray-300 uppercase tracking-widest">
+            
+            <div className="mt-6 text-[11px] font-bold text-pink-200/60 italic min-h-[16px]">
+              "{swiftieLyric}"
+            </div>
+
+            <div className="mt-6 pt-4 border-t border-white/10 text-[10px] font-bold text-purple-400 uppercase tracking-widest">
               Wallace Stegner Academy
             </div>
           </div>
