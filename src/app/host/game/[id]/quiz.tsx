@@ -18,11 +18,12 @@ export default function HostQuizView({
   const [showResults, setShowResults] = useState(false)
   
   const [answeredUserIds, setAnsweredUserIds] = useState<string[]>([])
+  const [totalPlayers, setTotalPlayers] = useState(0)
 
   const [isIntroducing, setIsIntroducing] = useState(true)
   const [introCountdown, setIntroCountdown] = useState(4)
 
-  // 1. Reset data parameters on slide switch
+  // 1. Initial setup on question advance
   useEffect(() => {
     if (questions && questions[currentSequence]) {
       const sortedQuestions = [...questions].sort((a: any, b: any) => a.order - b.order)
@@ -35,6 +36,16 @@ export default function HostQuizView({
       
       setIsIntroducing(true)
       setIntroCountdown(4)
+
+      // Dynamically count the current baseline pool registered for this room right now
+      const syncCurrentLobbyTotal = async () => {
+        const { count } = await supabase
+          .from('participants')
+          .select('*', { count: 'exact', head: true })
+          .eq('game_id', gameId)
+        setTotalPlayers(count || 0)
+      }
+      syncCurrentLobbyTotal()
     }
   }, [currentSequence, questions, gameId])
 
@@ -117,11 +128,18 @@ export default function HostQuizView({
     }
   }, [activeQuestion, gameId, isIntroducing])
 
-  // 4. Central Pacing Loop with Direct Database Time Sync Broadcasts
+  // 4. Master Countdown Broadcast Loop
   useEffect(() => {
     if (isIntroducing) return
+    
     if (timeLeft <= 0) {
       setShowResults(true)
+      // Lockout state change broadcasted directly to database matrix
+      supabase
+        .from('games')
+        .update({ phase: 'show_results', dynamic_time_left: 0 } as any)
+        .eq('id', gameId)
+        .then()
       return
     }
 
@@ -163,7 +181,6 @@ export default function HostQuizView({
   return (
     <main className="bg-gray-900 min-h-screen text-white font-sans flex flex-col justify-between p-8 select-none relative overflow-hidden">
       
-      {/* Inject Custom Jello Keyframe Styles Directly */}
       <style dangerouslySetInnerHTML={{__html: `
         @keyframes jello-grow {
           0% { transform: scale(1); }
@@ -190,8 +207,9 @@ export default function HostQuizView({
         <div className="flex gap-4 items-center">
           <div className="bg-gray-800 px-4 py-2 rounded-xl text-center border border-gray-700">
             <span className="text-[10px] uppercase font-black text-gray-400 block tracking-wider">Responses</span>
+            {/* FRACTION DISPLAY ACCURATE MATCH ON HOST SCREEN */}
             <span className="text-lg font-black text-green-400">
-              {isIntroducing ? '0' : answeredUserIds.length}
+              {answeredUserIds.length} / {totalPlayers || '---'}
             </span>
           </div>
           
@@ -221,8 +239,6 @@ export default function HostQuizView({
         <div className={`grid grid-cols-2 gap-6 text-left transition-all duration-700 ${isIntroducing ? 'opacity-25 blur-md pointer-events-none scale-95' : 'opacity-100 blur-0 scale-100'}`}>
           {choices.map((choice, idx) => {
             const gridColors = ['bg-[#e21b3c]', 'bg-[#1368ce]', 'bg-[#d89e00]', 'bg-[#26890c]']
-            
-            // Dynamic behavior logic when results are out
             const isCorrect = choice.is_correct
             const resultStyles = showResults 
               ? isCorrect 
