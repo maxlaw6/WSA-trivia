@@ -20,7 +20,7 @@ export default function HostQuizView({
   const [totalPlayers, setTotalPlayers] = useState(0)
   const [answersCount, setAnswersCount] = useState(0)
 
-  // 1. Initial setup for the active question
+  // 1. Initial setup when question sequence shifts
   useEffect(() => {
     if (questions && questions[currentSequence]) {
       const sortedQuestions = [...questions].sort((a: any, b: any) => a.order - b.order)
@@ -31,58 +31,50 @@ export default function HostQuizView({
       setShowResults(false)
       setAnswersCount(0)
 
-      const fetchTotalPlayers = async () => {
+      // Get the accurate player lobby baseline
+      const fetchLobbySpecs = async () => {
         const { count } = await supabase
           .from('participants')
           .select('*', { count: 'exact', head: true })
           .eq('game_id', gameId)
         setTotalPlayers(count || 0)
       }
-      fetchTotalPlayers()
+      fetchLobbySpecs()
     }
   }, [currentSequence, questions, gameId])
 
-  // 2. ULTRA-COMPATIBLE RAW COUNT ENGINE (Bypasses Javascript Array Mismatches)
+  // 2. ULTRA-LIGHTWEIGHT REAL-TIME SUBSCRIPTION (No Polling Loops)
   useEffect(() => {
     if (!activeQuestion) return
 
-    const checkAnswersDirectly = async () => {
-      // Fetch all answers submitted for this question directly from the master table
-      const { data: allAnswers, error } = await supabase
+    // Immediately pull the current answer snapshot for this question
+    const fetchCurrentCount = async () => {
+      const { count } = await supabase
         .from('answers')
-        .select('participant_id')
+        .select('*', { count: 'exact', head: true })
         .eq('question_id', activeQuestion.id)
-
-      if (error || !allAnswers || allAnswers.length === 0) {
-        setAnswersCount(0)
-        return
-      }
-
-      // Fetch active participants for this specific game session
-      const { data: activePlayers } = await supabase
-        .from('participants')
-        .select('id')
-        .eq('game_id', gameId)
-
-      if (!activePlayers || activePlayers.length === 0) {
-        setAnswersCount(0)
-        return
-      }
-
-      // Map both pools to clean, matching uppercase/lowercase standard strings to ensure absolute validation
-      const livePlayerIds = activePlayers.map((p: any) => String(p.id).toLowerCase())
-      const validAnswers = allAnswers.filter((ans: any) => 
-        livePlayerIds.includes(String(ans.participant_id).toLowerCase())
-      )
       
-      setAnswersCount(validAnswers.length)
+      setAnswersCount(count || 0)
     }
+    fetchCurrentCount()
 
-    checkAnswersDirectly()
-    const intervalId = setInterval(checkAnswersDirectly, 1000)
+    // Listen passively for insertions. Supabase pushes data ONLY when someone clicks.
+    const channel = supabase
+      .channel(`room_track_${activeQuestion.id}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'answers', filter: `question_id=eq.${activeQuestion.id}` },
+        () => {
+          // Increment counter instantly on packet arrival
+          setAnswersCount((prev) => prev + 1)
+        }
+      )
+      .subscribe()
 
-    return () => clearInterval(intervalId)
-  }, [activeQuestion, gameId])
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [activeQuestion])
 
   // 3. Central Pacing Loop
   useEffect(() => {
@@ -106,7 +98,6 @@ export default function HostQuizView({
 
   const handleNextQuestion = async () => {
     const nextIndex = currentSequence + 1
-    
     if (nextIndex >= questions.length) {
       await supabase.from('games').update({ phase: 'result' }).eq('id', gameId)
     } else {
