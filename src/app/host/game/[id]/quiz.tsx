@@ -17,14 +17,12 @@ export default function HostQuizView({
   const [timeLeft, setTimeLeft] = useState(30)
   const [showResults, setShowResults] = useState(false)
   
-  const [totalPlayers, setTotalPlayers] = useState(0)
   const [answeredUserIds, setAnsweredUserIds] = useState<string[]>([])
 
-  // New State: Introduction countdown window (4 seconds)
   const [isIntroducing, setIsIntroducing] = useState(true)
   const [introCountdown, setIntroCountdown] = useState(4)
 
-  // 1. Reset data structure and fetch local player baseline
+  // 1. Reset data parameters on slide switch
   useEffect(() => {
     if (questions && questions[currentSequence]) {
       const sortedQuestions = [...questions].sort((a: any, b: any) => a.order - b.order)
@@ -35,22 +33,12 @@ export default function HostQuizView({
       setShowResults(false)
       setAnsweredUserIds([])
       
-      // Reset the intro window sequence
       setIsIntroducing(true)
       setIntroCountdown(4)
-
-      const fetchLobbySpecs = async () => {
-        const { count } = await supabase
-          .from('participants')
-          .select('*', { count: 'exact', head: true })
-          .eq('game_id', gameId)
-        setTotalPlayers(count || 0)
-      }
-      fetchLobbySpecs()
     }
   }, [currentSequence, questions, gameId])
 
-  // 2. 4-Second Introduction Clock Loop
+  // 2. 4-Second Intro Delay Clock
   useEffect(() => {
     if (!isIntroducing) return
 
@@ -66,7 +54,7 @@ export default function HostQuizView({
     return () => clearTimeout(introTimer)
   }, [introCountdown, isIntroducing])
 
-  // 3. LIFECYCLE-ISOLATED SYNC ENGINE (Only counts clicks AFTER intro finishes)
+  // 3. Clean Live Sync Engine
   useEffect(() => {
     if (!activeQuestion || isIntroducing) return
 
@@ -129,7 +117,7 @@ export default function HostQuizView({
     }
   }, [activeQuestion, gameId, isIntroducing])
 
-  // 4. Central Pacing Loop (Only ticks down when introduction completes)
+  // 4. Central Pacing Loop
   const answersCount = answeredUserIds.length
 
   useEffect(() => {
@@ -139,18 +127,12 @@ export default function HostQuizView({
       return
     }
 
-    if (totalPlayers > 0 && answersCount >= totalPlayers) {
-      setTimeLeft(0)
-      setShowResults(true)
-      return
-    }
-
     const timer = setTimeout(() => {
       setTimeLeft((prev) => prev - 1)
     }, 1000)
 
     return () => clearTimeout(timer)
-  }, [timeLeft, answersCount, totalPlayers, isIntroducing])
+  }, [timeLeft, isIntroducing])
 
   const handleNextQuestion = async () => {
     const nextIndex = currentSequence + 1
@@ -166,7 +148,6 @@ export default function HostQuizView({
   return (
     <main className="bg-gray-900 min-h-screen text-white font-sans flex flex-col justify-between p-8 select-none">
       
-      {/* Header Dashboard Grid */}
       <div className="flex justify-between items-center bg-black/40 border border-gray-800 rounded-2xl p-4 shadow-xl">
         <div>
           <span className="text-xs font-bold text-blue-400 uppercase tracking-widest block">Wallace Stegner Academy</span>
@@ -177,7 +158,7 @@ export default function HostQuizView({
           <div className="bg-gray-800 px-4 py-2 rounded-xl text-center border border-gray-700">
             <span className="text-[10px] uppercase font-black text-gray-400 block tracking-wider">Responses</span>
             <span className="text-lg font-black text-green-400">
-              {isIntroducing ? '---' : `${answersCount} / ${totalPlayers || '---'}`}
+              {isIntroducing ? '0' : answersCount}
             </span>
           </div>
           
@@ -187,13 +168,11 @@ export default function HostQuizView({
         </div>
       </div>
 
-      {/* Main Board Center Display */}
       <div className="my-auto max-w-4xl w-full mx-auto text-center py-6">
         <h2 className="text-4xl font-extrabold tracking-tight text-white mb-12 leading-snug">
           {activeQuestion.body}
         </h2>
 
-        {/* Dynamic State Alert Boxes */}
         {isIntroducing ? (
           <div className="bg-blue-600/20 border border-blue-500/40 text-blue-400 font-black text-xl py-4 px-10 rounded-2xl inline-block tracking-widest uppercase mb-6 shadow-xl animate-pulse">
             👀 Read the Question! Choices dropping in {introCountdown}s...
@@ -206,7 +185,6 @@ export default function HostQuizView({
           <div className="h-14"></div>
         )}
 
-        {/* Choice Matrix Box with Intro Blurring Filter */}
         <div className={`grid grid-cols-2 gap-4 text-left transition-all duration-700 ${isIntroducing ? 'opacity-25 blur-md pointer-events-none scale-95' : 'opacity-100 blur-0 scale-100'}`}>
           {choices.map((choice, idx) => {
             const gridColors = ['bg-[#e21b3c]', 'bg-[#1368ce]', 'bg-[#d89e00]', 'bg-[#26890c]']
@@ -225,7 +203,6 @@ export default function HostQuizView({
         </div>
       </div>
 
-      {/* Bottom Control Track */}
       <div className="flex justify-end pt-4 border-t border-gray-800">
         <button
           disabled={isIntroducing}
