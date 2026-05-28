@@ -19,9 +19,7 @@ export default function SafePlayerParamPage({
   const [choices, setChoices] = useState<any[]>([])
   const [hasAnswered, setHasAnswered] = useState(false)
 
-  // Absolute master values tracked dynamically from host stream
   const [isIntroducing, setIsIntroducing] = useState(true)
-  const [timeLeft, setTimeLeft] = useState(30)
 
   const [isWinner, setIsWinner] = useState(false)
   const [winningName, setWinningName] = useState('')
@@ -140,7 +138,7 @@ export default function SafePlayerParamPage({
     if (gamePhase === 'result') checkPlacement()
   }, [gamePhase, checkPlacement])
 
-  // MASTER SYNC STREAM: Watches the host game state modifications in real-time
+  // MASTER SYNC STREAM
   useEffect(() => {
     if (!gameId) return
     const channel = supabase
@@ -151,10 +149,6 @@ export default function SafePlayerParamPage({
           setGamePhase(updated.phase)
           setCurrentSequence(updated.current_question_sequence)
           
-          // HARD TIME SYNC: Take values directly from what the host laptop wrote
-          if (updated.dynamic_time_left !== undefined) {
-            setTimeLeft(Number(updated.dynamic_time_left))
-          }
           if (updated.dynamic_is_introducing !== undefined) {
             setIsIntroducing(Boolean(updated.dynamic_is_introducing))
           }
@@ -169,7 +163,8 @@ export default function SafePlayerParamPage({
   }, [gameId, currentSequence])
 
   const handleSelectChoice = async (choice: any) => {
-    if (hasAnswered || !participantId || !activeQuestionId || isIntroducing || timeLeft <= 0) return
+    // HARD LOCKOUT GUARD: Reject insertions if time expired or phase switched to results
+    if (hasAnswered || !participantId || !activeQuestionId || isIntroducing || gamePhase === 'show_results') return
     setHasAnswered(true)
 
     await supabase.from('answers').insert({
@@ -184,7 +179,7 @@ export default function SafePlayerParamPage({
 
   if (!joined) {
     return (
-      <main className="bg-[#1e3a8a] min-h-screen w-full flex flex-col justify-center items-center px-4 text-white">
+      <main className="bg-[#1e3a8a] min-h-screen w-full flex flex-col justify-center items-center px-4 text-white pt-8">
         <div className="w-full max-w-sm bg-white text-gray-900 rounded-3xl p-8 shadow-2xl text-center">
           <div className="mb-4">
             <span className="text-3xl font-black block tracking-tight text-[#1e3a8a] uppercase leading-none">WSA</span>
@@ -201,16 +196,16 @@ export default function SafePlayerParamPage({
 
   if (gamePhase === 'lobby') {
     return (
-      <main className="bg-[#1e3a8a] min-h-screen w-full flex flex-col justify-center items-center text-white">
+      <main className="bg-[#1e3a8a] min-h-screen w-full flex flex-col justify-center items-center text-white pt-8">
         <h2 className="text-2xl font-black uppercase">Registered!</h2>
         <p className="mt-2 font-bold bg-white/20 px-3 py-1 rounded">{nickname}</p>
       </main>
     )
   }
 
-  if (gamePhase === 'quiz') {
+  if (gamePhase === 'quiz' || gamePhase === 'show_results') {
     return (
-      <main className="bg-gray-100 min-h-screen w-full flex flex-col text-gray-900 select-none">
+      <main className="bg-gray-100 min-h-screen w-full flex flex-col text-gray-900 select-none pt-8">
         <div className="bg-[#1e3a8a] text-white py-3 px-4 shadow-md flex justify-between items-center shrink-0">
           <span className="font-black text-xs uppercase">WSA Staff Trivia</span>
           <div className="bg-white/25 px-2.5 py-1 rounded text-xs font-bold">Q: {currentSequence + 1}</div>
@@ -219,8 +214,8 @@ export default function SafePlayerParamPage({
         <div className="w-full max-w-md mx-auto px-4 pt-4">
           <div className="bg-white rounded-2xl p-4 shadow-sm text-center">
             <h2 className="text-lg font-extrabold text-gray-800 mb-2">{currentQuestionText}</h2>
-            <div className={`inline-block px-3 py-0.5 rounded-full text-xs font-black ${isIntroducing ? 'bg-blue-50 text-blue-600' : timeLeft <= 0 ? 'bg-gray-100 text-gray-500' : 'bg-red-50 text-red-600'}`}>
-              {isIntroducing ? '👀 Previewing...' : timeLeft <= 0 ? '⏰ Time Up!' : `⏱️ ${timeLeft}s Left`}
+            <div className={`inline-block px-3 py-0.5 rounded-full text-xs font-black ${isIntroducing ? 'bg-blue-50 text-blue-600' : gamePhase === 'show_results' ? 'bg-gray-100 text-gray-500' : 'bg-red-50 text-red-600'}`}>
+              {isIntroducing ? '👀 Previewing...' : gamePhase === 'show_results' ? '⏰ Time Up!' : '⏱️ Active Round'}
             </div>
           </div>
         </div>
@@ -230,7 +225,7 @@ export default function SafePlayerParamPage({
             <div className="text-center bg-white/80 backdrop-blur p-6 rounded-2xl shadow-md w-full border border-gray-200/50 animate-pulse">
               <span className="text-sm font-black text-[#1e3a8a] uppercase tracking-wider block">Get Ready!</span>
             </div>
-          ) : timeLeft <= 0 ? (
+          ) : gamePhase === 'show_results' ? (
             <div className="text-center bg-white p-6 rounded-2xl shadow-md w-full border border-gray-200 text-gray-400 font-bold uppercase tracking-wide">
               ⏰ Locked out! Look at board for results.
             </div>
@@ -254,7 +249,7 @@ export default function SafePlayerParamPage({
 
   if (gamePhase === 'result') {
     return (
-      <main className="bg-[#1e3a8a] min-h-screen w-full flex flex-col justify-center items-center px-4 text-white text-center select-none">
+      <main className="bg-[#1e3a8a] min-h-screen w-full flex flex-col justify-center items-center px-4 text-white text-center select-none pt-8">
         {loadingResult ? (
           <p className="font-bold text-xl animate-pulse">Calculating scores...</p>
         ) : isWinner ? (
