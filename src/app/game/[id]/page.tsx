@@ -14,7 +14,7 @@ export default function PlayerGamePage({
   const [selectedChoice, setSelectedChoice] = useState<string | null>(null)
   
   // Game State
-  const [currentQuestionSequence, setCurrentQuestionSequence] = useState(0)
+  const [currentQuestionSequence, setCurrentQuestionSequence] = useState<number | null>(null)
   const [question, setQuestion] = useState<any>(null)
   const [choices, setChoices] = useState<any[]>([])
   const [hasSubmitted, setHasSubmitted] = useState(false)
@@ -40,7 +40,14 @@ export default function PlayerGamePage({
 
     if (!game) return
 
-    setCurrentQuestionSequence(game.current_question_sequence)
+    // Track the sequence change to reset submission windows safely
+    setCurrentQuestionSequence((prevSequence) => {
+      if (prevSequence !== null && prevSequence !== game.current_question_sequence) {
+        setHasSubmitted(false)
+        setSelectedChoice(null)
+      }
+      return game.current_question_sequence
+    })
     
     if (!participantId && phase === 'join') {
       return
@@ -63,16 +70,25 @@ export default function PlayerGamePage({
           setQuestion(currentQ)
           const sortedChoices = currentQ.choices.sort((a: any, b: any) => a.id.localeCompare(b.id))
           setChoices(sortedChoices)
+
+          // Auto-recover submission status if they already answered this question in the DB
+          if (participantId) {
+            const { data: existingAnswer } = await supabase
+              .from('answers')
+              .select('choice_id')
+              .eq('participant_id', participantId)
+              .eq('question_id', currentQ.id)
+              .maybeSingle()
+
+            if (existingAnswer) {
+              setHasSubmitted(true)
+              setSelectedChoice(existingAnswer.choice_id)
+            }
+          }
         }
       }
     }
   }, [gameId, participantId, phase])
-
-  // --- Reset Submission state ONLY when question sequence shifts ---
-  useEffect(() => {
-    setSelectedChoice(null)
-    setHasSubmitted(false)
-  }, [currentQuestionSequence])
 
   // --- 2. MOBILE SCREEN KEEP-ALIVE ---
   useEffect(() => {
@@ -107,9 +123,7 @@ export default function PlayerGamePage({
 
   // --- 3. SUPABASE REAL-TIME SYNC ---
   useEffect(() => {
-    if (participantId) {
-       fetchGameState()
-    }
+    fetchGameState()
 
     const channel = supabase
       .channel('player_sync_stream')
@@ -151,7 +165,6 @@ export default function PlayerGamePage({
   const handleAnswerSubmit = async (choiceId: string, isCorrect: boolean) => {
     if (hasSubmitted || !participantId || !question) return
 
-    // CRITICAL: Force state update immediately before contacting Supabase
     setHasSubmitted(true)
     setSelectedChoice(choiceId)
 
@@ -216,25 +229,33 @@ export default function PlayerGamePage({
 
     return (
       <main className="min-h-screen bg-gray-900 text-white flex flex-col p-4">
-        <div className="bg-gray-800 rounded-2xl p-4 mb-6 text-center border border-gray-700 shadow-md">
-          <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">Playing As</p>
-          <p className="text-xl font-black text-white uppercase">{nickname}</p>
+        {/* Top Identification Bar */}
+        <div className="bg-gray-800 rounded-2xl p-3 mb-3 text-center border border-gray-700 shadow-sm flex justify-between items-center px-6">
+          <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Playing As</span>
+          <span className="text-lg font-black text-white uppercase">{nickname}</span>
         </div>
 
-        <div className="flex-grow flex flex-col justify-center gap-4">
-          {/* FIX: Explicitly enforce the hasSubmitted barrier right here */}
+        {/* RESTORED: Question prompt box on the phone layout */}
+        {question && (
+          <div className="bg-black/40 backdrop-blur-sm border border-gray-700 rounded-2xl p-5 mb-4 text-center shadow-lg">
+            <span className="text-xs font-bold text-pink-400 uppercase tracking-widest block mb-1">Current Trivia Task</span>
+            <h2 className="text-xl font-bold leading-snug">{question.body}</h2>
+          </div>
+        )}
+
+        <div className="flex-grow flex flex-col justify-center gap-3">
           {!hasSubmitted && !selectedChoice ? (
             choices.map((choice, index) => (
               <button
                 key={choice.id}
                 onClick={() => handleAnswerSubmit(choice.id, choice.is_correct)}
-                className={`w-full ${choiceColors[index % 4]} text-white font-black text-2xl py-8 px-4 rounded-2xl shadow-xl active:scale-95 transition-transform border-b-4 border-black/30`}
+                className={`w-full ${choiceColors[index % 4]} text-white font-black text-xl py-6 px-4 rounded-2xl shadow-xl active:scale-95 transition-transform border-b-4 border-black/30`}
               >
                 {choice.body}
               </button>
             ))
           ) : (
-            <div className="text-center py-20 bg-gray-800 rounded-3xl border border-gray-700 shadow-inner animate-pulse">
+            <div className="text-center py-16 bg-gray-800 rounded-3xl border border-gray-700 shadow-inner animate-pulse">
               <span className="text-6xl mb-4 block">⏳</span>
               <h2 className="text-2xl font-black uppercase text-pink-400">Answer Secured!</h2>
               <p className="text-gray-400 mt-2 font-bold">Hold tight for the host timer...</p>
