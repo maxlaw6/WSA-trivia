@@ -19,6 +19,9 @@ export default function PlayerGamePage({
   const [choices, setChoices] = useState<any[]>([])
   const [hasSubmitted, setHasSubmitted] = useState(false)
 
+  // --- ANTICHEAT: Countdown Timer state ---
+  const [countdown, setCountdown] = useState<number>(0)
+
   // --- 0. LOCAL STORAGE RECOVERY ---
   useEffect(() => {
     const savedId = localStorage.getItem(`trivia_participant_${gameId}`)
@@ -40,11 +43,17 @@ export default function PlayerGamePage({
 
     if (!game) return
 
-    // Track the sequence change to reset submission windows safely
+    // Track sequence shifts cleanly
     setCurrentQuestionSequence((prevSequence) => {
       if (prevSequence !== null && prevSequence !== game.current_question_sequence) {
         setHasSubmitted(false)
         setSelectedChoice(null)
+        
+        // Trigger a fresh 3-second countdown blocker for the new question!
+        // Bypass countdown on intro/freebies (Order < 0) if desired, but keep for standard quiz
+        if (game.phase === 'quiz') {
+          setCountdown(3)
+        }
       }
       return game.current_question_sequence
     })
@@ -83,12 +92,24 @@ export default function PlayerGamePage({
             if (existingAnswer) {
               setHasSubmitted(true)
               setSelectedChoice(existingAnswer.choice_id)
+              setCountdown(0) // Clear countdown if they already answered previously
             }
           }
         }
       }
     }
   }, [gameId, participantId, phase])
+
+  // --- ANTICHEAT: Countdown Interval Engine ---
+  useEffect(() => {
+    if (countdown <= 0) return
+
+    const timer = setInterval(() => {
+      setCountdown((prev) => prev - 1)
+    }, 1000)
+
+    return () => clearInterval(timer)
+  }, [countdown])
 
   // --- 2. MOBILE SCREEN KEEP-ALIVE ---
   useEffect(() => {
@@ -163,7 +184,8 @@ export default function PlayerGamePage({
   }
 
   const handleAnswerSubmit = async (choiceId: string, isCorrect: boolean) => {
-    if (hasSubmitted || !participantId || !question) return
+    // Block submission if countdown is active, already submitted, or state missing
+    if (countdown > 0 || hasSubmitted || !participantId || !question) return
 
     setHasSubmitted(true)
     setSelectedChoice(choiceId)
@@ -228,14 +250,14 @@ export default function PlayerGamePage({
     const choiceColors = ['bg-red-600', 'bg-blue-600', 'bg-yellow-500', 'bg-green-600']
 
     return (
-      <main className="min-h-screen bg-gray-900 text-white flex flex-col p-4">
+      <main className="min-h-screen bg-gray-900 text-white flex flex-col p-4 relative">
         {/* Top Identification Bar */}
         <div className="bg-gray-800 rounded-2xl p-3 mb-3 text-center border border-gray-700 shadow-sm flex justify-between items-center px-6">
           <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Playing As</span>
           <span className="text-lg font-black text-white uppercase">{nickname}</span>
         </div>
 
-        {/* RESTORED: Question prompt box on the phone layout */}
+        {/* Question prompt box */}
         {question && (
           <div className="bg-black/40 backdrop-blur-sm border border-gray-700 rounded-2xl p-5 mb-4 text-center shadow-lg">
             <span className="text-xs font-bold text-pink-400 uppercase tracking-widest block mb-1">Current Trivia Task</span>
@@ -243,17 +265,33 @@ export default function PlayerGamePage({
           </div>
         )}
 
-        <div className="flex-grow flex flex-col justify-center gap-3">
+        <div className="flex-grow flex flex-col justify-center gap-3 relative">
           {!hasSubmitted && !selectedChoice ? (
-            choices.map((choice, index) => (
-              <button
-                key={choice.id}
-                onClick={() => handleAnswerSubmit(choice.id, choice.is_correct)}
-                className={`w-full ${choiceColors[index % 4]} text-white font-black text-xl py-6 px-4 rounded-2xl shadow-xl active:scale-95 transition-transform border-b-4 border-black/30`}
-              >
-                {choice.body}
-              </button>
-            ))
+            <>
+              {/* Choices Buttons Container */}
+              <div className={`flex-grow flex flex-col justify-center gap-3 transition-all duration-300 ${countdown > 0 ? 'blur-md pointer-events-none opacity-40' : ''}`}>
+                {choices.map((choice, index) => (
+                  <button
+                    key={choice.id}
+                    disabled={countdown > 0}
+                    onClick={() => handleAnswerSubmit(choice.id, choice.is_correct)}
+                    className={`w-full ${choiceColors[index % 4]} text-white font-black text-xl py-6 px-4 rounded-2xl shadow-xl active:scale-95 transition-transform border-b-4 border-black/30`}
+                  >
+                    {choice.body}
+                  </button>
+                ))}
+              </div>
+
+              {/* OVERLAY: Visual Countdown blocker screen */}
+              {countdown > 0 && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/10 rounded-2xl z-20">
+                  <div className="bg-gray-800/90 border border-gray-600 backdrop-blur-md px-8 py-6 rounded-2xl shadow-2xl text-center animate-bounce">
+                    <span className="text-sm font-black text-yellow-400 tracking-wider uppercase block mb-1">Buttons Loading</span>
+                    <span className="text-4xl font-black text-white">🔥 {countdown} ...</span>
+                  </div>
+                </div>
+              )}
+            </>
           ) : (
             <div className="text-center py-16 bg-gray-800 rounded-3xl border border-gray-700 shadow-inner animate-pulse">
               <span className="text-6xl mb-4 block">⏳</span>
