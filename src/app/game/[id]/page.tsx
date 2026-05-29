@@ -49,12 +49,10 @@ export default function PlayerGamePage({
         setHasSubmitted(false)
         setSelectedChoice(null)
         
-        // Force a strict 3-second countdown blocker on sequence shift
         if (game.phase === 'quiz') {
           setCountdown(3)
         }
       } else if (prevSequence === null && game.phase === 'quiz') {
-        // Initial page load during an active quiz
         setCountdown(3)
       }
       return game.current_question_sequence
@@ -79,10 +77,16 @@ export default function PlayerGamePage({
         
         if (currentQ) {
           setQuestion(currentQ)
-          const sortedChoices = currentQ.choices.sort((a: any, b: any) => a.id.localeCompare(b.id))
+          
+          // FIX: Sort choices explicitly by ID to keep array indices completely unified
+          const sortedChoices = currentQ.choices.sort((a: any, b: any) => {
+            if (a.id < b.id) return -1;
+            if (a.id > b.id) return 1;
+            return 0;
+          })
           setChoices(sortedChoices)
 
-          // Auto-recover submission status if they already answered this question in the DB
+          // Auto-recover submission status if they already answered
           if (participantId) {
             const { data: existingAnswer } = await supabase
               .from('answers')
@@ -94,7 +98,7 @@ export default function PlayerGamePage({
             if (existingAnswer) {
               setHasSubmitted(true)
               setSelectedChoice(existingAnswer.choice_id)
-              setCountdown(0) // Wipe blocker if they already submitted
+              setCountdown(0)
             }
           }
         }
@@ -268,7 +272,6 @@ export default function PlayerGamePage({
 
         <div className="flex-grow flex flex-col justify-center gap-3">
           {countdown > 0 ? (
-            /* 1. STRICT LOCKOUT SCREEN: Shows if countdown is counting down */
             <div className="text-center py-16 bg-gray-800 rounded-3xl border border-gray-700 shadow-inner">
               <span className="text-5xl mb-4 block animate-bounce">🔥</span>
               <h2 className="text-3xl font-black uppercase text-yellow-400 tracking-wider">Get Ready!</h2>
@@ -278,7 +281,6 @@ export default function PlayerGamePage({
               </div>
             </div>
           ) : !hasSubmitted && !selectedChoice ? (
-            /* 2. ACTIVE VOTING BUTTONS: Shows only when countdown hits 0 */
             choices.map((choice, index) => (
               <button
                 key={choice.id}
@@ -289,7 +291,6 @@ export default function PlayerGamePage({
               </button>
             ))
           ) : (
-            /* 3. ANSWER SECURED SCREEN: Shows after a button is pressed */
             <div className="text-center py-16 bg-gray-800 rounded-3xl border border-gray-700 shadow-inner animate-pulse">
               <span className="text-6xl mb-4 block">⏳</span>
               <h2 className="text-2xl font-black uppercase text-pink-400">Answer Secured!</h2>
