@@ -10,14 +10,15 @@ export default function PlayerGamePage({
 }) {
   const [phase, setPhase] = useState<string>('join')
   const [nickname, setNickname] = useState('')
-  // FIX: Allow participantId to be a string OR a number
-  const [participantId, setParticipantId] = useState<string | number | null>(null)
+  
+  // FIX: Explicitly tell TypeScript these IDs are strings (UUIDs), not numbers!
+  const [participantId, setParticipantId] = useState<string | null>(null)
+  const [selectedChoice, setSelectedChoice] = useState<string | null>(null)
   
   // Game State
   const [currentQuestionSequence, setCurrentQuestionSequence] = useState(0)
   const [question, setQuestion] = useState<any>(null)
   const [choices, setChoices] = useState<any[]>([])
-  const [selectedChoice, setSelectedChoice] = useState<number | null>(null)
   const [hasSubmitted, setHasSubmitted] = useState(false)
 
   // --- 0. LOCAL STORAGE RECOVERY ---
@@ -27,7 +28,6 @@ export default function PlayerGamePage({
     
     if (savedId) {
       console.log('Recovered session from local storage!')
-      // FIX: Don't use parseInt, just pass the raw saved string ID
       setParticipantId(savedId)
       if (savedName) setNickname(savedName)
     }
@@ -64,7 +64,10 @@ export default function PlayerGamePage({
         
         if (currentQ) {
           setQuestion(currentQ)
-          const sortedChoices = currentQ.choices.sort((a: any, b: any) => a.id - b.id)
+          const sortedChoices = currentQ.choices.sort((a: any, b: any) => {
+            // Safe string comparison for sorting
+            return a.id.localeCompare(b.id)
+          })
           setChoices(sortedChoices)
         }
       }
@@ -145,13 +148,14 @@ export default function PlayerGamePage({
     // 3. Success! Save to state and LocalStorage so it survives refreshes
     if (data) {
       setParticipantId(data.id)
-      localStorage.setItem(`trivia_participant_${gameId}`, data.id.toString())
+      localStorage.setItem(`trivia_participant_${gameId}`, String(data.id))
       localStorage.setItem(`trivia_nickname_${gameId}`, cleanName)
       fetchGameState()
     }
   }
 
-  const handleAnswerSubmit = async (choiceId: number, isCorrect: boolean) => {
+  // FIX: Explicitly type choiceId as a string
+  const handleAnswerSubmit = async (choiceId: string, isCorrect: boolean) => {
     if (hasSubmitted || !participantId || !question) return
 
     setSelectedChoice(choiceId)
