@@ -21,7 +21,6 @@ export default function PlayerGamePage({
 
   // --- 1. CORE DATA FETCHING ---
   const fetchGameState = useCallback(async () => {
-    // Get current game phase
     const { data: game } = await supabase
       .from('games')
       .select('phase, current_question_sequence, quiz_set_id')
@@ -32,14 +31,12 @@ export default function PlayerGamePage({
 
     setCurrentQuestionSequence(game.current_question_sequence)
     
-    // If we haven't joined yet, stay on join screen regardless of game phase
     if (!participantId && phase === 'join') {
       return
     }
 
     setPhase(game.phase)
 
-    // If game is in quiz mode, fetch the current question and choices
     if (game.phase === 'quiz') {
       const { data: quizSet } = await supabase
         .from('quiz_sets')
@@ -48,19 +45,16 @@ export default function PlayerGamePage({
         .single()
 
       if (quizSet && quizSet.questions) {
-        // Sort questions by order and find the current one
         const sortedQuestions = quizSet.questions.sort((a: any, b: any) => a.order - b.order)
         const currentQ = sortedQuestions[game.current_question_sequence]
         
         if (currentQ) {
           setQuestion(currentQ)
-          // Sort choices so they always appear in the same order (A, B, C, D)
           const sortedChoices = currentQ.choices.sort((a: any, b: any) => a.id - b.id)
           setChoices(sortedChoices)
         }
       }
       
-      // Reset selection state for the new question
       setSelectedChoice(null)
       setHasSubmitted(false)
     }
@@ -81,16 +75,12 @@ export default function PlayerGamePage({
       }
     }
 
-    // Request immediately on load
     requestWakeLock()
 
-    // Listen for the user switching apps or closing their phone
     const handleVisibilityChange = async () => {
       if (document.visibilityState === 'visible') {
         console.log('Player returned to app, re-syncing...')
-        // Re-request wake lock
         requestWakeLock()
-        // Force a re-fetch of the game state to ensure they aren't stuck on an old question
         fetchGameState()
       }
     }
@@ -111,7 +101,7 @@ export default function PlayerGamePage({
       .channel('player_sync_stream')
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'games', filter: `id=eq.${gameId}` },
         () => {
-          fetchGameState() // Instantly refresh when the host clicks "Next"
+          fetchGameState()
         }
       ).subscribe()
 
@@ -131,7 +121,7 @@ export default function PlayerGamePage({
 
     if (!error && data) {
       setParticipantId(data.id)
-      fetchGameState() // Fetch state to see if game already started
+      fetchGameState()
     }
   }
 
@@ -141,7 +131,6 @@ export default function PlayerGamePage({
     setSelectedChoice(choiceId)
     setHasSubmitted(true)
 
-    // Standard scoring: 100 points for correct
     const scoreVal = isCorrect ? 100 : 0
 
     await supabase
@@ -156,7 +145,6 @@ export default function PlayerGamePage({
 
   // --- 5. UI RENDERERS ---
 
-  // SCREEN 1: REGISTRATION
   if (phase === 'join' || !participantId) {
     return (
       <main className="min-h-screen bg-gray-900 text-white flex flex-col items-center justify-center p-6 relative overflow-hidden">
@@ -187,32 +175,28 @@ export default function PlayerGamePage({
     )
   }
 
-  // SCREEN 2: WAITING IN LOBBY
   if (phase === 'lobby') {
     return (
       <main className="min-h-screen bg-gray-900 text-white flex flex-col items-center justify-center p-6 text-center">
         <div className="bg-gradient-to-br from-pink-500/20 to-purple-600/20 p-8 rounded-3xl border border-pink-500/30 animate-pulse">
-          <h2 className="text-3xl font-black uppercase mb-2">You're In!</h2>
+          <h2 className="text-3xl font-black uppercase mb-2">You&apos;re In!</h2>
           <p className="text-gray-300 font-bold text-lg">Look up at the projector.</p>
-          <p className="text-pink-400 text-sm mt-6 font-medium italic">"Are you ready for it?"</p>
+          <p className="text-pink-400 text-sm mt-6 font-medium italic">&quot;Are you ready for it?&quot;</p>
         </div>
       </main>
     )
   }
 
-  // SCREEN 3: ACTIVE QUIZ (VOTING)
   if (phase === 'quiz') {
     const choiceColors = ['bg-red-600', 'bg-blue-600', 'bg-yellow-500', 'bg-green-600']
 
     return (
       <main className="min-h-screen bg-gray-900 text-white flex flex-col p-4">
-        {/* Header bar */}
         <div className="bg-gray-800 rounded-2xl p-4 mb-6 text-center border border-gray-700 shadow-md">
           <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">Playing As</p>
           <p className="text-xl font-black text-white uppercase">{nickname}</p>
         </div>
 
-        {/* Voting Area */}
         <div className="flex-grow flex flex-col justify-center gap-4">
           {!hasSubmitted ? (
             choices.map((choice, index) => (
@@ -236,7 +220,6 @@ export default function PlayerGamePage({
     )
   }
 
-  // SCREEN 4: SHOWING RESULTS (Between questions)
   if (phase === 'show_results') {
     return (
       <main className="min-h-screen bg-gray-900 text-white flex flex-col items-center justify-center p-6 text-center">
@@ -247,7 +230,6 @@ export default function PlayerGamePage({
     )
   }
 
-  // SCREEN 5: FINAL LEADERBOARD
   if (phase === 'result') {
     return (
       <main className="min-h-screen bg-purple-900 text-white flex flex-col items-center justify-center p-6 text-center relative overflow-hidden">
