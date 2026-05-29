@@ -10,8 +10,6 @@ export default function PlayerGamePage({
 }) {
   const [phase, setPhase] = useState<string>('join')
   const [nickname, setNickname] = useState('')
-  
-  // FIX: Explicitly tell TypeScript these IDs are strings (UUIDs), not numbers!
   const [participantId, setParticipantId] = useState<string | null>(null)
   const [selectedChoice, setSelectedChoice] = useState<string | null>(null)
   
@@ -27,7 +25,6 @@ export default function PlayerGamePage({
     const savedName = localStorage.getItem(`trivia_nickname_${gameId}`)
     
     if (savedId) {
-      console.log('Recovered session from local storage!')
       setParticipantId(savedId)
       if (savedName) setNickname(savedName)
     }
@@ -64,18 +61,18 @@ export default function PlayerGamePage({
         
         if (currentQ) {
           setQuestion(currentQ)
-          const sortedChoices = currentQ.choices.sort((a: any, b: any) => {
-            // Safe string comparison for sorting
-            return a.id.localeCompare(b.id)
-          })
+          const sortedChoices = currentQ.choices.sort((a: any, b: any) => a.id.localeCompare(b.id))
           setChoices(sortedChoices)
         }
       }
-      
-      setSelectedChoice(null)
-      setHasSubmitted(false)
     }
   }, [gameId, participantId, phase])
+
+  // --- Reset Submission state ONLY when question sequence shifts ---
+  useEffect(() => {
+    setSelectedChoice(null)
+    setHasSubmitted(false)
+  }, [currentQuestionSequence])
 
   // --- 2. MOBILE SCREEN KEEP-ALIVE ---
   useEffect(() => {
@@ -132,20 +129,17 @@ export default function PlayerGamePage({
 
     const cleanName = nickname.trim()
 
-    // 1. Try to insert them as a new player
     const { data, error } = await supabase
       .from('participants')
       .insert([{ game_id: gameId, nickname: cleanName }])
       .select()
       .single()
 
-    // 2. STRICT BLOCK: If the name is taken, stop them immediately!
     if (error) {
       alert("🚨 That name is already taken! Please pick a different one.")
       return
     }
 
-    // 3. Success! Save to state and LocalStorage so it survives refreshes
     if (data) {
       setParticipantId(data.id)
       localStorage.setItem(`trivia_participant_${gameId}`, String(data.id))
@@ -154,12 +148,12 @@ export default function PlayerGamePage({
     }
   }
 
-  // FIX: Explicitly type choiceId as a string
   const handleAnswerSubmit = async (choiceId: string, isCorrect: boolean) => {
     if (hasSubmitted || !participantId || !question) return
 
-    setSelectedChoice(choiceId)
+    // CRITICAL: Force state update immediately before contacting Supabase
     setHasSubmitted(true)
+    setSelectedChoice(choiceId)
 
     const scoreVal = isCorrect ? 100 : 0
 
@@ -228,7 +222,8 @@ export default function PlayerGamePage({
         </div>
 
         <div className="flex-grow flex flex-col justify-center gap-4">
-          {!hasSubmitted ? (
+          {/* FIX: Explicitly enforce the hasSubmitted barrier right here */}
+          {!hasSubmitted && !selectedChoice ? (
             choices.map((choice, index) => (
               <button
                 key={choice.id}
@@ -239,10 +234,10 @@ export default function PlayerGamePage({
               </button>
             ))
           ) : (
-            <div className="text-center py-20 bg-gray-800 rounded-3xl border border-gray-700">
+            <div className="text-center py-20 bg-gray-800 rounded-3xl border border-gray-700 shadow-inner animate-pulse">
               <span className="text-6xl mb-4 block">⏳</span>
-              <h2 className="text-2xl font-black uppercase text-gray-300">Answer Locked!</h2>
-              <p className="text-gray-500 mt-2 font-bold">Waiting for timer...</p>
+              <h2 className="text-2xl font-black uppercase text-pink-400">Answer Secured!</h2>
+              <p className="text-gray-400 mt-2 font-bold">Hold tight for the host timer...</p>
             </div>
           )}
         </div>
