@@ -1,257 +1,234 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/types/types'
 
-export default function SafePlayerParamPage({
+export default function PlayerGamePage({
   params: { id: gameId },
 }: {
   params: { id: string }
 }) {
+  const [phase, setPhase] = useState<string>('join')
   const [nickname, setNickname] = useState('')
-  const [joined, setJoined] = useState(false)
-  const [participantId, setParticipantId] = useState<string | null>(null)
-  const [gamePhase, setGamePhase] = useState('lobby')
-  const [currentSequence, setCurrentSequence] = useState(0)
+  const [participantId, setParticipantId] = useState<number | null>(null)
   
-  const [activeQuestionId, setActiveQuestionId] = useState<string | null>(null)
-  const [currentQuestionText, setCurrentQuestionText] = useState('')
+  // Game State
+  const [currentQuestionSequence, setCurrentQuestionSequence] = useState(0)
+  const [question, setQuestion] = useState<any>(null)
   const [choices, setChoices] = useState<any[]>([])
-  const [hasAnswered, setHasAnswered] = useState(false)
+  const [selectedChoice, setSelectedChoice] = useState<number | null>(null)
+  const [hasSubmitted, setHasSubmitted] = useState(false)
 
-  // Absolute master values tracked dynamically from host stream
-  const [isIntroducing, setIsIntroducing] = useState(true)
-  const [timeLeft, setTimeLeft] = useState(30)
+  // --- 1. CORE DATA FETCHING ---
+  const fetchGameState = useCallback(async () => {
+    // Get current game phase
+    const { data: game } = await supabase
+      .from('games')
+      .select('phase, current_question_sequence, quiz_set_id')
+      .eq('id', gameId)
+      .single()
 
-  const [isWinner, setIsWinner] = useState(false)
-  const [winningName, setWinningName] = useState('')
-  const [loadingResult, setLoadingResult] = useState(false)
+    if (!game) return
 
+    setCurrentQuestionSequence(game.current_question_sequence)
+    
+    // If we haven't joined yet, stay on join screen regardless of game phase
+    if (!participantId && phase === 'join') {
+      return
+    }
+
+    setPhase(game.phase)
+
+    // If game is in quiz mode, fetch the current question and choices
+    if (game.phase === 'quiz') {
+      const { data: quizSet } = await supabase
+        .from('quiz_sets')
+        .select(`questions(*, choices(*))`)
+        .eq('id', game.quiz_set_id)
+        .single()
+
+      if (quizSet && quizSet.questions) {
+        // Sort questions by order and find the current one
+        const sortedQuestions = quizSet.questions.sort((a: any, b: any) => a.order - b.order)
+        const currentQ = sortedQuestions[game.current_question_sequence]
+        
+        if (currentQ) {
+          setQuestion(currentQ)
+          // Sort choices so they always appear in the same order (A, B, C, D)
+          const sortedChoices = currentQ.choices.sort((a: any, b: any) => a.id - b.id)
+          setChoices(sortedChoices)
+        }
+      }
+      
+      // Reset selection state for the new question
+      setSelectedChoice(null)
+      setHasSubmitted(false)
+    }
+  }, [gameId, participantId, phase])
+
+  // --- 2. MOBILE SCREEN KEEP-ALIVE & ANTI-DISCONNECT ENGINE ---
+  useEffect(() => {
+    let wakeLock: any = null
+
+    const requestWakeLock = async () => {
+      try {
+        if ('wakeLock' in navigator) {
+          wakeLock = await navigator.wakeLock.request('screen')
+          console.log('Wake Lock active: Screen will not dim')
+        }
+      } catch (err) {
+        console.log('Wake Lock denied by device:', err)
+      }
+    }
+
+    // Request immediately on load
+    requestWakeLock()
+
+    // Listen for the user switching apps or closing their phone
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState === 'visible') {
+        console.log('Player returned to app, re-syncing...')
+        // Re-request wake lock
+        requestWakeLock()
+        // Force a re-fetch of the game state to ensure they aren't stuck on an old question
+        fetchGameState()
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      if (wakeLock !== null) wakeLock.release()
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [fetchGameState])
+
+  // --- 3. SUPABASE REAL-TIME SYNC ---
+  useEffect(() => {
+    fetchGameState()
+
+    const channel = supabase
+      .channel('player_sync_stream')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'games', filter: `id=eq.${gameId}` },
+        () => {
+          fetchGameState() // Instantly refresh when the host clicks "Next"
+        }
+      ).subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [gameId, fetchGameState])
+
+  // --- 4. ACTION HANDLERS ---
   const handleJoinGame = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!nickname.trim()) return
 
-    const { data: targetGame } = await supabase
-      .from('games')
-      .select('id, phase, quiz_set_id, current_question_sequence')
-      .eq('id', gameId)
-      .single()
-
-    if (!targetGame) {
-      alert('Active game room not found!')
-      return
-    }
-
-    const { data: nameCheck } = await supabase
+    const { data, error } = await supabase
       .from('participants')
-      .select('id')
-      .eq('game_id', gameId)
-      .ilike('nickname', nickname.trim())
-
-    if (nameCheck && nameCheck.length > 0) {
-      alert('That nickname is taken! Please add your last initial.')
-      return
-    }
-
-    setGamePhase(targetGame.phase)
-    setCurrentSequence(targetGame.current_question_sequence)
-
-    // FORCE ONLY NICKNAME AND GAME_ID (Ignores user_id system defaults)
-    const { data: player, error } = await supabase
-      .from('participants')
-      .insert({ 
-        nickname: nickname.trim(), 
-        game_id: gameId 
-      } as any)
+      .insert([{ game_id: gameId, nickname: nickname.trim() }])
       .select()
       .single()
 
-    if (error) return alert(error.message)
-
-    setParticipantId(player.id)
-    setJoined(true)
-    fetchSyncDetails(targetGame.quiz_set_id, targetGame.current_question_sequence)
-  }
-
-  const fetchSyncDetails = async (quizSetId: string, sequence: number) => {
-    const { data: quizData } = await supabase
-      .from('quiz_sets')
-      .select(`questions(*, choices(*))`)
-      .eq('id', quizSetId)
-      .single()
-
-    if (quizData && quizData.questions) {
-      const sortedQuestions = [...quizData.questions].sort((a: any, b: any) => a.order - b.order)
-      const activeQuestion = sortedQuestions[sequence]
-      
-      if (activeQuestion) {
-        setActiveQuestionId(activeQuestion.id)
-        setCurrentQuestionText(activeQuestion.body || 'Get Ready...')
-        setChoices(activeQuestion.choices || [])
-      }
+    if (!error && data) {
+      setParticipantId(data.id)
+      fetchGameState() // Fetch state to see if game already started
     }
   }
 
-  const checkPlacement = useCallback(async () => {
-    setLoadingResult(true)
-    const { data: players } = await supabase
-      .from('participants')
-      .select('id, nickname')
-      .eq('game_id', gameId)
+  const handleAnswerSubmit = async (choiceId: number, isCorrect: boolean) => {
+    if (hasSubmitted || !participantId || !question) return
 
-    if (!players || players.length === 0) {
-      setLoadingResult(false)
-      return
-    }
+    setSelectedChoice(choiceId)
+    setHasSubmitted(true)
 
-    const playerIds = players.map((p: any) => String(p.id))
-    const { data: answersRows } = await supabase
+    // Standard scoring: 100 points for correct
+    const scoreVal = isCorrect ? 100 : 0
+
+    await supabase
       .from('answers')
-      .select('participant_id, score')
-      .in('participant_id', playerIds)
-
-    const scoreMap: Record<string, number> = {}
-    playerIds.forEach(id => { scoreMap[id] = 0 })
-
-    if (answersRows) {
-      answersRows.forEach((ans: any) => {
-        const pId = String(ans.participant_id)
-        if (scoreMap[pId] !== undefined) {
-          scoreMap[pId] += Number(ans.score || 0)
-        }
-      })
-    }
-
-    let topPlayerId = playerIds[0]
-    let maxScore = -1
-    playerIds.forEach(id => {
-      if (scoreMap[id] > maxScore) {
-        maxScore = scoreMap[id]
-        topPlayerId = id
-      }
-    })
-
-    const winnerObj = players.find((p: any) => String(p.id) === topPlayerId)
-    if (winnerObj) {
-      setWinningName(winnerObj.nickname)
-      if (winnerObj.nickname.toLowerCase() === nickname.toLowerCase()) {
-        setIsWinner(true)
-      }
-    }
-    setLoadingResult(false)
-  }, [gameId, nickname])
-
-  useEffect(() => {
-    if (gamePhase === 'result') checkPlacement()
-  }, [gamePhase, checkPlacement])
-
-  // MASTER SYNC STREAM
-  useEffect(() => {
-    if (!gameId) return
-    const channel = supabase
-      .channel('safe_param_player_sync')
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'games', filter: `id=eq.${gameId}` },
-        (payload: any) => {
-          const updated = payload.new
-          setGamePhase(updated.phase)
-          setCurrentSequence(updated.current_question_sequence)
-          
-          if (updated.dynamic_time_left !== undefined) {
-            setTimeLeft(Number(updated.dynamic_time_left))
-          }
-          if (updated.dynamic_is_introducing !== undefined) {
-            setIsIntroducing(Boolean(updated.dynamic_is_introducing))
-          }
-
-          if (updated.current_question_sequence !== currentSequence) {
-            setHasAnswered(false)
-            fetchSyncDetails(updated.quiz_set_id, updated.current_question_sequence)
-          }
-        }
-      ).subscribe()
-    return () => { supabase.removeChannel(channel) }
-  }, [gameId, currentSequence])
-
-  const handleSelectChoice = async (choice: any) => {
-    // SOLIDIFIED MECHANICAL LOCK: Immediate rejection if time matches 0 or phase states match
-    if (hasAnswered || !participantId || !activeQuestionId || isIntroducing || timeLeft <= 0 || gamePhase === 'show_results') {
-      return
-    }
-    setHasAnswered(true)
-
-    await supabase.from('answers').insert({
-      participant_id: participantId,
-      question_id: activeQuestionId,
-      choice_id: choice.id,
-      score: choice.is_correct ? 100 : 0
-    } as any)
+      .insert([{
+        participant_id: participantId,
+        question_id: question.id,
+        choice_id: choiceId,
+        score: scoreVal
+      }])
   }
 
-  const gridColors = ['bg-[#e21b3c]', 'bg-[#1368ce]', 'bg-[#d89e00]', 'bg-[#26890c]']
+  // --- 5. UI RENDERERS ---
 
-  if (!joined) {
+  // SCREEN 1: REGISTRATION
+  if (phase === 'join' || !participantId) {
     return (
-      <main className="bg-[#1e3a8a] min-h-screen w-full flex flex-col justify-center items-center px-4 text-white pt-8">
-        <div className="w-full max-w-sm bg-white text-gray-900 rounded-3xl p-8 shadow-2xl text-center">
-          <div className="mb-4">
-            <span className="text-3xl font-black block tracking-tight text-[#1e3a8a] uppercase leading-none">WSA</span>
-            <span className="text-xs font-bold tracking-widest text-gray-400 block uppercase mt-1">Wallace Stegner Academy</span>
-          </div>
-          <form onSubmit={handleJoinGame} className="space-y-4">
-            <input type="text" maxLength={12} placeholder="YOUR NICKNAME" value={nickname} onChange={(e) => setNickname(e.target.value)} className="w-full px-4 py-4 border-2 border-gray-200 rounded-xl text-center text-lg font-black tracking-wide uppercase" required />
-            <button type="submit" className="w-full bg-gray-900 text-white font-black text-lg py-4 rounded-xl uppercase tracking-wider">Enter Game</button>
+      <main className="min-h-screen bg-gray-900 text-white flex flex-col items-center justify-center p-6 relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-br from-blue-900/40 to-pink-900/40 z-0"></div>
+        <div className="z-10 w-full max-w-sm bg-black/50 backdrop-blur-lg p-8 rounded-3xl border border-gray-700 shadow-2xl text-center">
+          <span className="text-xs font-black text-blue-400 tracking-widest uppercase block mb-2">Staff Trivia Arena</span>
+          <h1 className="text-3xl font-black uppercase tracking-tight mb-8">Join the Game</h1>
+          
+          <form onSubmit={handleJoinGame} className="flex flex-col gap-4">
+            <input
+              type="text"
+              placeholder="Enter your Nickname..."
+              value={nickname}
+              onChange={(e) => setNickname(e.target.value)}
+              className="w-full bg-gray-800 border-2 border-gray-600 rounded-xl px-5 py-4 text-lg font-bold text-center text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 transition-colors uppercase"
+              maxLength={15}
+              required
+            />
+            <button
+              type="submit"
+              className="w-full bg-blue-600 hover:bg-blue-500 text-white font-black text-xl py-4 rounded-xl uppercase tracking-wider shadow-lg transition-transform active:scale-95"
+            >
+              Lock In 🚀
+            </button>
           </form>
         </div>
       </main>
     )
   }
 
-  if (gamePhase === 'lobby') {
+  // SCREEN 2: WAITING IN LOBBY
+  if (phase === 'lobby') {
     return (
-      <main className="bg-[#1e3a8a] min-h-screen w-full flex flex-col justify-center items-center text-white pt-8">
-        <h2 className="text-2xl font-black uppercase">Registered!</h2>
-        <p className="mt-2 font-bold bg-white/20 px-3 py-1 rounded">{nickname}</p>
+      <main className="min-h-screen bg-gray-900 text-white flex flex-col items-center justify-center p-6 text-center">
+        <div className="bg-gradient-to-br from-pink-500/20 to-purple-600/20 p-8 rounded-3xl border border-pink-500/30 animate-pulse">
+          <h2 className="text-3xl font-black uppercase mb-2">You're In!</h2>
+          <p className="text-gray-300 font-bold text-lg">Look up at the projector.</p>
+          <p className="text-pink-400 text-sm mt-6 font-medium italic">"Are you ready for it?"</p>
+        </div>
       </main>
     )
   }
 
-  if (gamePhase === 'quiz' || gamePhase === 'show_results' || timeLeft <= 0) {
+  // SCREEN 3: ACTIVE QUIZ (VOTING)
+  if (phase === 'quiz') {
+    const choiceColors = ['bg-red-600', 'bg-blue-600', 'bg-yellow-500', 'bg-green-600']
+
     return (
-      <main className="bg-gray-100 min-h-screen w-full flex flex-col text-gray-900 select-none pt-8">
-        <div className="bg-[#1e3a8a] text-white py-3 px-4 shadow-md flex justify-between items-center shrink-0">
-          <span className="font-black text-xs uppercase">WSA Staff Trivia</span>
-          <div className="bg-white/25 px-2.5 py-1 rounded text-xs font-bold">Q: {currentSequence + 1}</div>
-        </div>
-        
-        <div className="w-full max-w-md mx-auto px-4 pt-4">
-          <div className="bg-white rounded-2xl p-4 shadow-sm text-center">
-            <h2 className="text-lg font-extrabold text-gray-800 mb-2">{currentQuestionText}</h2>
-            <div className={`inline-block px-3 py-0.5 rounded-full text-xs font-black ${isIntroducing ? 'bg-blue-50 text-blue-600' : (gamePhase === 'show_results' || timeLeft <= 0) ? 'bg-gray-100 text-gray-500' : 'bg-red-50 text-red-600'}`}>
-              {isIntroducing ? '👀 Previewing...' : (gamePhase === 'show_results' || timeLeft <= 0) ? '⏰ Time Up!' : '⏱️ Active Round'}
-            </div>
-          </div>
+      <main className="min-h-screen bg-gray-900 text-white flex flex-col p-4">
+        {/* Header bar */}
+        <div className="bg-gray-800 rounded-2xl p-4 mb-6 text-center border border-gray-700 shadow-md">
+          <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">Playing As</p>
+          <p className="text-xl font-black text-white uppercase">{nickname}</p>
         </div>
 
-        <div className="flex-1 w-full max-w-md mx-auto p-4 flex flex-col justify-center items-center">
-          {isIntroducing ? (
-            <div className="text-center bg-white/80 backdrop-blur p-6 rounded-2xl shadow-md w-full border border-gray-200/50 animate-pulse">
-              <span className="text-sm font-black text-[#1e3a8a] uppercase tracking-wider block">Get Ready!</span>
-            </div>
-          ) : (gamePhase === 'show_results' || timeLeft <= 0) ? (
-            <div className="text-center bg-white p-6 rounded-2xl shadow-md w-full border border-gray-200 text-gray-400 font-bold uppercase tracking-wide">
-              ⏰ Locked out! Look at board for results.
-            </div>
-          ) : !hasAnswered ? (
-            <div className="w-full h-full flex flex-col justify-between gap-2.5">
-              {choices.map((choice, idx) => (
-                <button key={choice.id} onClick={() => handleSelectChoice(choice)} className={`w-full flex-1 min-h-[68px] ${gridColors[idx % 4]} text-white text-lg font-black rounded-xl shadow-md border-b-4 border-black/20 uppercase tracking-wide transition-all active:scale-95`}>
-                  {choice.body}
-                </button>
-              ))}
-            </div>
+        {/* Voting Area */}
+        <div className="flex-grow flex flex-col justify-center gap-4">
+          {!hasSubmitted ? (
+            choices.map((choice, index) => (
+              <button
+                key={choice.id}
+                onClick={() => handleAnswerSubmit(choice.id, choice.is_correct)}
+                className={`w-full ${choiceColors[index % 4]} text-white font-black text-2xl py-8 px-4 rounded-2xl shadow-xl active:scale-95 transition-transform border-b-4 border-black/30`}
+              >
+                {choice.body}
+              </button>
+            ))
           ) : (
-            <div className="text-center bg-white p-6 rounded-2xl shadow-xl w-full">
-              <h3 className="text-xl font-black text-[#1e3a8a] uppercase">Answer Locked In!</h3>
+            <div className="text-center py-20 bg-gray-800 rounded-3xl border border-gray-700">
+              <span className="text-6xl mb-4 block">⏳</span>
+              <h2 className="text-2xl font-black uppercase text-gray-300">Answer Locked!</h2>
+              <p className="text-gray-500 mt-2 font-bold">Waiting for timer...</p>
             </div>
           )}
         </div>
@@ -259,35 +236,29 @@ export default function SafePlayerParamPage({
     )
   }
 
-  if (gamePhase === 'result') {
+  // SCREEN 4: SHOWING RESULTS (Between questions)
+  if (phase === 'show_results') {
     return (
-      <main className="bg-[#1e3a8a] min-h-screen w-full flex flex-col justify-center items-center px-4 text-white text-center select-none pt-8">
-        {loadingResult ? (
-          <p className="font-bold text-xl animate-pulse">Calculating scores...</p>
-        ) : isWinner ? (
-          <div className="bg-yellow-400 text-gray-900 rounded-3xl p-8 shadow-2xl max-w-sm w-full border-4 border-white">
-            <div className="text-5xl mb-2">🏆</div>
-            <h2 className="text-3xl font-black tracking-tight uppercase">YOU WON!</h2>
-            <p className="font-extrabold text-sm mt-2 tracking-wide text-amber-950">
-              📸 SCREENSHOT THIS WIN! It is proof you had the most knowledge!
-            </p>
-            <div className="mt-6 bg-white rounded-xl py-3 px-4 font-black tracking-wide border-2 border-amber-600">
-              {nickname.toUpperCase()}
-            </div>
-          </div>
-        ) : (
-          <div className="bg-white text-gray-900 rounded-3xl p-8 shadow-2xl max-w-sm w-full border border-gray-100">
-            <div className="text-4xl mb-2">🤝</div>
-            <h2 className="text-2xl font-black tracking-tight text-[#1e3a8a] uppercase">THANK YOU FOR PLAYING!</h2>
-            <p className="text-sm text-gray-500 font-bold mt-2 leading-relaxed">
-              Sorry, maybe next time! 🌟<br />
-              Winner: <span className="font-black text-gray-800 bg-gray-100 px-2 py-0.5 rounded">{winningName || '---'}</span>
-            </p>
-            <div className="mt-6 pt-4 border-t border-gray-100 text-[10px] font-bold text-gray-300 uppercase tracking-widest">
-              Wallace Stegner Academy
-            </div>
-          </div>
-        )}
+      <main className="min-h-screen bg-gray-900 text-white flex flex-col items-center justify-center p-6 text-center">
+         <span className="text-6xl mb-4 block">👀</span>
+         <h2 className="text-3xl font-black uppercase text-white mb-2">Check the Screen!</h2>
+         <p className="text-gray-400 font-bold">Did you get it right?</p>
+      </main>
+    )
+  }
+
+  // SCREEN 5: FINAL LEADERBOARD
+  if (phase === 'result') {
+    return (
+      <main className="min-h-screen bg-purple-900 text-white flex flex-col items-center justify-center p-6 text-center relative overflow-hidden">
+        <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/stardust.png')] opacity-30"></div>
+        <div className="z-10 bg-black/40 p-10 rounded-3xl backdrop-blur-sm border border-purple-500/30">
+          <span className="text-6xl mb-4 block animate-bounce">👑</span>
+          <h1 className="text-4xl font-black uppercase tracking-tight text-pink-300 mb-2">
+            Game Over!
+          </h1>
+          <p className="text-xl font-bold text-gray-200">Look at the projector to see the Grand Champion!</p>
+        </div>
       </main>
     )
   }
