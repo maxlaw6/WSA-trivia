@@ -19,7 +19,7 @@ export default function PlayerGamePage({
   const [choices, setChoices] = useState<any[]>([])
   const [hasSubmitted, setHasSubmitted] = useState(false)
 
-  // --- ANTICHEAT: Countdown Timer state ---
+  // Countdown Blocker state
   const [countdown, setCountdown] = useState<number>(0)
 
   // --- 0. LOCAL STORAGE RECOVERY ---
@@ -49,11 +49,13 @@ export default function PlayerGamePage({
         setHasSubmitted(false)
         setSelectedChoice(null)
         
-        // Trigger a fresh 3-second countdown blocker for the new question!
-        // Bypass countdown on intro/freebies (Order < 0) if desired, but keep for standard quiz
+        // Force a strict 3-second countdown blocker on sequence shift
         if (game.phase === 'quiz') {
           setCountdown(3)
         }
+      } else if (prevSequence === null && game.phase === 'quiz') {
+        // Initial page load during an active quiz
+        setCountdown(3)
       }
       return game.current_question_sequence
     })
@@ -92,7 +94,7 @@ export default function PlayerGamePage({
             if (existingAnswer) {
               setHasSubmitted(true)
               setSelectedChoice(existingAnswer.choice_id)
-              setCountdown(0) // Clear countdown if they already answered previously
+              setCountdown(0) // Wipe blocker if they already submitted
             }
           }
         }
@@ -100,7 +102,7 @@ export default function PlayerGamePage({
     }
   }, [gameId, participantId, phase])
 
-  // --- ANTICHEAT: Countdown Interval Engine ---
+  // --- Countdown Interval Engine ---
   useEffect(() => {
     if (countdown <= 0) return
 
@@ -184,7 +186,6 @@ export default function PlayerGamePage({
   }
 
   const handleAnswerSubmit = async (choiceId: string, isCorrect: boolean) => {
-    // Block submission if countdown is active, already submitted, or state missing
     if (countdown > 0 || hasSubmitted || !participantId || !question) return
 
     setHasSubmitted(true)
@@ -250,7 +251,7 @@ export default function PlayerGamePage({
     const choiceColors = ['bg-red-600', 'bg-blue-600', 'bg-yellow-500', 'bg-green-600']
 
     return (
-      <main className="min-h-screen bg-gray-900 text-white flex flex-col p-4 relative">
+      <main className="min-h-screen bg-gray-900 text-white flex flex-col p-4">
         {/* Top Identification Bar */}
         <div className="bg-gray-800 rounded-2xl p-3 mb-3 text-center border border-gray-700 shadow-sm flex justify-between items-center px-6">
           <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Playing As</span>
@@ -259,40 +260,36 @@ export default function PlayerGamePage({
 
         {/* Question prompt box */}
         {question && (
-          <div className="bg-black/40 backdrop-blur-sm border border-gray-700 rounded-2xl p-5 mb-4 text-center shadow-lg">
+          <div className="bg-black/40 border border-gray-700 rounded-2xl p-5 mb-4 text-center shadow-lg">
             <span className="text-xs font-bold text-pink-400 uppercase tracking-widest block mb-1">Current Trivia Task</span>
             <h2 className="text-xl font-bold leading-snug">{question.body}</h2>
           </div>
         )}
 
-        <div className="flex-grow flex flex-col justify-center gap-3 relative">
-          {!hasSubmitted && !selectedChoice ? (
-            <>
-              {/* Choices Buttons Container */}
-              <div className={`flex-grow flex flex-col justify-center gap-3 transition-all duration-300 ${countdown > 0 ? 'blur-md pointer-events-none opacity-40' : ''}`}>
-                {choices.map((choice, index) => (
-                  <button
-                    key={choice.id}
-                    disabled={countdown > 0}
-                    onClick={() => handleAnswerSubmit(choice.id, choice.is_correct)}
-                    className={`w-full ${choiceColors[index % 4]} text-white font-black text-xl py-6 px-4 rounded-2xl shadow-xl active:scale-95 transition-transform border-b-4 border-black/30`}
-                  >
-                    {choice.body}
-                  </button>
-                ))}
+        <div className="flex-grow flex flex-col justify-center gap-3">
+          {countdown > 0 ? (
+            /* 1. STRICT LOCKOUT SCREEN: Shows if countdown is counting down */
+            <div className="text-center py-16 bg-gray-800 rounded-3xl border border-gray-700 shadow-inner">
+              <span className="text-5xl mb-4 block animate-bounce">🔥</span>
+              <h2 className="text-3xl font-black uppercase text-yellow-400 tracking-wider">Get Ready!</h2>
+              <p className="text-gray-400 mt-2 font-bold mb-6">Buttons unlocking in...</p>
+              <div className="inline-block bg-black/40 text-white text-5xl font-black px-8 py-4 rounded-2xl border border-gray-600">
+                {countdown}
               </div>
-
-              {/* OVERLAY: Visual Countdown blocker screen */}
-              {countdown > 0 && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/10 rounded-2xl z-20">
-                  <div className="bg-gray-800/90 border border-gray-600 backdrop-blur-md px-8 py-6 rounded-2xl shadow-2xl text-center animate-bounce">
-                    <span className="text-sm font-black text-yellow-400 tracking-wider uppercase block mb-1">Buttons Loading</span>
-                    <span className="text-4xl font-black text-white">🔥 {countdown} ...</span>
-                  </div>
-                </div>
-              )}
-            </>
+            </div>
+          ) : !hasSubmitted && !selectedChoice ? (
+            /* 2. ACTIVE VOTING BUTTONS: Shows only when countdown hits 0 */
+            choices.map((choice, index) => (
+              <button
+                key={choice.id}
+                onClick={() => handleAnswerSubmit(choice.id, choice.is_correct)}
+                className={`w-full ${choiceColors[index % 4]} text-white font-black text-xl py-6 px-4 rounded-2xl shadow-xl active:scale-95 transition-transform border-b-4 border-black/30`}
+              >
+                {choice.body}
+              </button>
+            ))
           ) : (
+            /* 3. ANSWER SECURED SCREEN: Shows after a button is pressed */
             <div className="text-center py-16 bg-gray-800 rounded-3xl border border-gray-700 shadow-inner animate-pulse">
               <span className="text-6xl mb-4 block">⏳</span>
               <h2 className="text-2xl font-black uppercase text-pink-400">Answer Secured!</h2>
