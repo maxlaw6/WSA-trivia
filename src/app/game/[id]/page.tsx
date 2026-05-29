@@ -78,12 +78,8 @@ export default function PlayerGamePage({
         if (currentQ) {
           setQuestion(currentQ)
           
-          // FIX: Sort choices explicitly by ID to keep array indices completely unified
-          const sortedChoices = currentQ.choices.sort((a: any, b: any) => {
-            if (a.id < b.id) return -1;
-            if (a.id > b.id) return 1;
-            return 0;
-          })
+          // FIX: Use explicit localeCompare to perfectly mirror identical string sorting on the host dashboard
+          const sortedChoices = currentQ.choices.sort((a: any, b: any) => a.id.localeCompare(b.id))
           setChoices(sortedChoices)
 
           // Auto-recover submission status if they already answered
