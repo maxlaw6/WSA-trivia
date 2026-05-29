@@ -78,9 +78,8 @@ export default function PlayerGamePage({
         if (currentQ) {
           setQuestion(currentQ)
           
-          // FIX: Use explicit localeCompare to perfectly mirror identical string sorting on the host dashboard
-          const sortedChoices = currentQ.choices.sort((a: any, b: any) => a.id.localeCompare(b.id))
-          setChoices(sortedChoices)
+          // FIX: DO NOT SORT AT ALL. Let the array index match the natural order coming from the host file fetch query.
+          setChoices(currentQ.choices || [])
 
           // Auto-recover submission status if they already answered
           if (participantId) {
