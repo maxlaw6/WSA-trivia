@@ -10,7 +10,8 @@ export default function PlayerGamePage({
 }) {
   const [phase, setPhase] = useState<string>('join')
   const [nickname, setNickname] = useState('')
-  const [participantId, setParticipantId] = useState<number | null>(null)
+  // FIX: Allow participantId to be a string OR a number
+  const [participantId, setParticipantId] = useState<string | number | null>(null)
   
   // Game State
   const [currentQuestionSequence, setCurrentQuestionSequence] = useState(0)
@@ -19,15 +20,15 @@ export default function PlayerGamePage({
   const [selectedChoice, setSelectedChoice] = useState<number | null>(null)
   const [hasSubmitted, setHasSubmitted] = useState(false)
 
-  // --- 0. LOCAL STORAGE RECOVERY (Fixes the Refresh Issue) ---
+  // --- 0. LOCAL STORAGE RECOVERY ---
   useEffect(() => {
-    // Check if the phone remembers who they are
     const savedId = localStorage.getItem(`trivia_participant_${gameId}`)
     const savedName = localStorage.getItem(`trivia_nickname_${gameId}`)
     
     if (savedId) {
       console.log('Recovered session from local storage!')
-      setParticipantId(parseInt(savedId))
+      // FIX: Don't use parseInt, just pass the raw saved string ID
+      setParticipantId(savedId)
       if (savedName) setNickname(savedName)
     }
   }, [gameId])
