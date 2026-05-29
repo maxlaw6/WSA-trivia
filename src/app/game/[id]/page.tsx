@@ -19,6 +19,19 @@ export default function PlayerGamePage({
   const [selectedChoice, setSelectedChoice] = useState<number | null>(null)
   const [hasSubmitted, setHasSubmitted] = useState(false)
 
+  // --- 0. LOCAL STORAGE RECOVERY (Fixes the Refresh Issue) ---
+  useEffect(() => {
+    // Check if the phone remembers who they are
+    const savedId = localStorage.getItem(`trivia_participant_${gameId}`)
+    const savedName = localStorage.getItem(`trivia_nickname_${gameId}`)
+    
+    if (savedId) {
+      console.log('Recovered session from local storage!')
+      setParticipantId(parseInt(savedId))
+      if (savedName) setNickname(savedName)
+    }
+  }, [gameId])
+
   // --- 1. CORE DATA FETCHING ---
   const fetchGameState = useCallback(async () => {
     const { data: game } = await supabase
@@ -60,7 +73,7 @@ export default function PlayerGamePage({
     }
   }, [gameId, participantId, phase])
 
-  // --- 2. MOBILE SCREEN KEEP-ALIVE & ANTI-DISCONNECT ENGINE ---
+  // --- 2. MOBILE SCREEN KEEP-ALIVE ---
   useEffect(() => {
     let wakeLock: any = null
 
@@ -68,10 +81,9 @@ export default function PlayerGamePage({
       try {
         if ('wakeLock' in navigator) {
           wakeLock = await navigator.wakeLock.request('screen')
-          console.log('Wake Lock active: Screen will not dim')
         }
       } catch (err) {
-        console.log('Wake Lock denied by device:', err)
+        console.log('Wake Lock denied')
       }
     }
 
@@ -79,7 +91,6 @@ export default function PlayerGamePage({
 
     const handleVisibilityChange = async () => {
       if (document.visibilityState === 'visible') {
-        console.log('Player returned to app, re-syncing...')
         requestWakeLock()
         fetchGameState()
       }
@@ -95,7 +106,9 @@ export default function PlayerGamePage({
 
   // --- 3. SUPABASE REAL-TIME SYNC ---
   useEffect(() => {
-    fetchGameState()
+    if (participantId) {
+       fetchGameState()
+    }
 
     const channel = supabase
       .channel('player_sync_stream')
@@ -106,21 +119,33 @@ export default function PlayerGamePage({
       ).subscribe()
 
     return () => { supabase.removeChannel(channel) }
-  }, [gameId, fetchGameState])
+  }, [gameId, fetchGameState, participantId])
 
   // --- 4. ACTION HANDLERS ---
   const handleJoinGame = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!nickname.trim()) return
 
+    const cleanName = nickname.trim()
+
+    // 1. Try to insert them as a new player
     const { data, error } = await supabase
       .from('participants')
-      .insert([{ game_id: gameId, nickname: nickname.trim() }])
+      .insert([{ game_id: gameId, nickname: cleanName }])
       .select()
       .single()
 
-    if (!error && data) {
+    // 2. STRICT BLOCK: If the name is taken, stop them immediately!
+    if (error) {
+      alert("🚨 That name is already taken! Please pick a different one.")
+      return
+    }
+
+    // 3. Success! Save to state and LocalStorage so it survives refreshes
+    if (data) {
       setParticipantId(data.id)
+      localStorage.setItem(`trivia_participant_${gameId}`, data.id.toString())
+      localStorage.setItem(`trivia_nickname_${gameId}`, cleanName)
       fetchGameState()
     }
   }
